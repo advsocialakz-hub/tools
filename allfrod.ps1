@@ -916,6 +916,65 @@ function Get-AllAvailableProfiles {
 
 }
 
+function Open-CookieSettingsTab($procHandle, $port = 9222, $cookieUrl = "chrome://settings/content/all") {
+    P "  -> Активация вкладки '$cookieUrl'..." "Cyan"
+
+    # 1. Принудительный фокус на окно браузера
+    if ($procHandle -and $procHandle -ne [IntPtr]::Zero) {
+        [WinInputV8]::ShowWindow($procHandle, 3) | Out-Null
+        [WinInputV8]::SetForegroundWindow($procHandle) | Out-Null
+        Start-Sleep -Milliseconds 300
+    }
+
+    $openedViaCdp = $false
+
+    # 2. Метод А: Навигация через CDP (Chrome DevTools Protocol) с обходом системного прокси
+    try {
+        $noProxyHandler = New-Object System.Net.Http.HttpClientHandler
+        $noProxyHandler.UseProxy = $false
+        $client = New-Object System.Net.Http.HttpClient($noProxyHandler)
+        $client.Timeout = [System.TimeSpan]::FromSeconds(2)
+        $resp = $client.GetStringAsync("http://127.0.0.1:$port/json").Result
+        $tabs = $resp | ConvertFrom-Json
+        $activeTab = $tabs | Where-Object { $_.type -eq "page" -and $_.url -notmatch '^(chrome|edge|opera):' } | Select-Object -First 1
+
+        if ($activeTab -and $activeTab.webSocketDebuggerUrl) {
+            $ws = New-Object System.Net.WebSockets.ClientWebSocket
+            $ct = [System.Threading.CancellationToken]::None
+            $uri = New-Object System.Uri($activeTab.webSocketDebuggerUrl)
+            $ws.ConnectAsync($uri, $ct).Wait(2000) | Out-Null
+
+            if ($ws.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
+                $navPayload = @{
+                    id = 100
+                    method = "Page.navigate"
+                    params = @{ url = $cookieUrl }
+                } | ConvertTo-Json -Compress
+
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($navPayload)
+                $segment = New-Object System.ArraySegment[byte] -ArgumentList @($bytes, 0, $bytes.Length)
+                $ws.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $ct).Wait(1500) | Out-Null
+                $ws.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, "Done", $ct) | Out-Null
+                $openedViaCdp = $true
+                P "  [✓] Страница куков открыта через CDP!" "Green"
+            }
+        }
+    } catch {}
+
+    # 3. Метод Б: Бронебойный UI-фоллбэк через адресную строку (Ctrl+T + URL + Enter)
+    if (-not $openedViaCdp) {
+        P "  [✓] Открытие страницы куков через адресную строку (Ctrl+T)..." "Yellow"
+        [WinInputV8]::ReleaseAllModifiers()
+        # Открываем чистую новую вкладку
+        [System.Windows.Forms.SendKeys]::SendWait("^t")
+        Start-Sleep -Milliseconds 450
+        # Вводим URL и жмем Enter
+        [System.Windows.Forms.SendKeys]::SendWait($cookieUrl + "{ENTER}")
+        Start-Sleep -Seconds 2
+        [WinInputV8]::ReleaseAllModifiers()
+    }
+}
+
 function Navigate-BrowserBack($winX, $winY) {
     P "      [⤾] Человеческий возврат к поиску через кнопку 'Назад'..." "Gray"
     $dpiScale = 1.0
@@ -2001,17 +2060,9 @@ function Run-PersonaWarmerModule($targetProfiles = $null, $targetPreset = "all")
             default   { "chrome://settings/content/all" }
         }
 
-        $openArgs = @()
-        if ($p.UserData) { $openArgs += "--user-data-dir=`"$($p.UserData)`"" }
-        if ($p.Folder)   { $openArgs += "--profile-directory=`"$($p.Folder)`"" }
-        $openArgs += "`"$cookieSettingsUrl`""
-
-        $pOpen = New-Object System.Diagnostics.ProcessStartInfo
-        $pOpen.FileName = $p.BrowserExe
-        $pOpen.Arguments = ($openArgs -join " ")
-        $pOpen.UseShellExecute = $true
-        [System.Diagnostics.Process]::Start($pOpen) | Out-Null
-        Start-Sleep -Seconds 3
+        $targetHwnd = if (Test-Path variable:proc) { $proc.MainWindowHandle } else { [IntPtr]::Zero }
+        Open-CookieSettingsTab $targetHwnd 9222 $cookieSettingsUrl
+        Start-Sleep -Seconds 2
 
         # Анализ базы куков текущего профиля и вывод полного досье
         $profPath = if ($p.Folder) { Join-Path $p.UserData $p.Folder } else { $p.UserData }
