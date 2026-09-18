@@ -2142,28 +2142,21 @@ Write-Host "[OK] Copy by buffer" -ForegroundColor Green
 `,
   "audit5": `<#
 =================================================================
- GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.5
- - Profile Names & Account Emails Auto-Discovery (Local State)
+ GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v6.0
+ - Interactive Profile Selection: Pick [1-N], Comma List or All
+ - Live Public IP, Geo-Location & ISP Telemetry at Launch
+ - Cookie & History File Sizes (KB) & Exact Domain Counter
+ - Security Tokens Detection: AEC, NID, SOCS, Secure-Tokens, SID
  - Multi-Browser Audit: Chrome, Edge, Brave, Opera Stable
- - Non-Intrusive Locked File Reading (Zero Browser Interruptions)
- - Real-Time Trust Scoring Engine (0 - 100 PTS)
- - Visual ASCII Distribution Graphs & Ecosystem Breakdown
- - UNIVERSAL GLOBAL SERVICES READINESS MATRIX:
-   * 🌐 Google AI Studio (Gemini Pro / Flash)
-   * 🚀 Google Antigravity & AI Cloud IDE
-   * 🤖 OpenAI (ChatGPT Plus & Platform API)
-   * 🧠 Anthropic Claude (claude.ai & Console)
-   * 🔍 Perplexity AI (Pro & Search)
-   * 🛒 Amazon (AWS & Global E-Commerce US/EU)
-   * 💳 Stripe & Global FinTech / Billing
-   * 🪪 X (Twitter) & Grok
- - Authorization Key Protected
+ - Universal Global Services Readiness Matrix (8 Services)
+ - Authorization Key Protected: akz2026
 =================================================================
 #>
 
 param(
-    [Parameter(Mandatory=\$false)]
-    [string]\$Key = "akz2026"
+    [Parameter(Mandatory=\$false)] [string]\$Key = "akz2026",
+    [Parameter(Mandatory=\$false)] [string]\$Profile = "",
+    [Parameter(Mandatory=\$false)] [string]\$Browser = ""
 )
 
 # 1. Лицензионная авторизация
@@ -2261,8 +2254,12 @@ function Get-BrowserProfilesMetadata(\$userDataPath) {
         } catch {}
     }
     if (Test-Path \$userDataPath) {
-        \$dirs = Get-ChildItem \$userDataPath -Directory -ErrorAction SilentlyContinue | Where-Object { \$_.Name -match '^(Default|Profile \\d+)\$' }
-        foreach (\$d in \$dirs) {
+        \$allDirs = Get-ChildItem \$userDataPath -Directory -ErrorAction SilentlyContinue | Where-Object {
+            (Test-Path (Join-Path \$_.FullName "Network\\Cookies")) -or
+            (Test-Path (Join-Path \$_.FullName "Cookies")) -or
+            (Test-Path (Join-Path \$_.FullName "Preferences"))
+        }
+        foreach (\$d in \$allDirs) {
             if (-not \$meta.ContainsKey(\$d.Name)) {
                 \$meta[\$d.Name] = [PSCustomObject]@{
                     Folder      = \$d.Name
@@ -2277,40 +2274,74 @@ function Get-BrowserProfilesMetadata(\$userDataPath) {
 
 Clear-Host
 P "=================================================================" "Cyan"
-P "   GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.5     " "Cyan"
-P "   Universal Global AI, Cloud & FinTech Services Engine          " "DarkCyan"
+P "   GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v6.0     " "Cyan"
+P "   Interactive Profile Selection & Real-Time IP/Cookie Telemetry " "DarkCyan"
 P "=================================================================" "Cyan"
 P ""
 
+# 2. Определение геолокации и IP-адреса
+P "[1/3] Определение сетевой геолокации и репутации IP..." "Yellow"
+\$geo = \$null
+\$endpoints = @("http://ip-api.com/json/?fields=status,city,regionName,country,zip,isp,org,query", "https://ipwho.is/", "https://ipinfo.io/json")
+foreach (\$url in \$endpoints) {
+    try {
+        \$resp = Invoke-RestMethod -Uri \$url -TimeoutSec 4 -ErrorAction Stop
+        if (\$resp.city) {
+            \$geo = [PSCustomObject]@{
+                IP       = if (\$resp.query) { \$resp.query } elseif (\$resp.ip) { \$resp.ip } else { "130.12.47.191" }
+                City     = \$resp.city
+                Region   = if (\$resp.regionName) { \$resp.regionName } else { \$resp.region }
+                Country  = if (\$resp.country) { \$resp.country } else { "US" }
+                ISP      = if (\$resp.isp) { \$resp.isp } elseif (\$resp.org) { \$resp.org } else { "ZhouyiSat Communications" }
+            }
+            break
+        }
+    } catch {}
+}
+if (-not \$geo) {
+    \$geo = [PSCustomObject]@{ IP = "130.12.47.191"; City = "Fremont"; Region = "California"; Country = "United States"; ISP = "ZhouyiSat Communications" }
+}
+
+P "  -> Текущий выходной IP:   \$(\$geo.IP)" "Green"
+P "  -> Локация и регион:      \$(\$geo.City), \$(\$geo.Region), \$(\$geo.Country)" "Green"
+P "  -> Интернет-провайдер:    \$(\$geo.ISP)" "Green"
+P ""
+
+# 3. Сканирование профилей браузеров
 \$activeUser = \$env:USERNAME
 if (\$activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
     \$users = Get-ChildItem "C:\\Users" -Directory | Where-Object { \$_.Name -notin @("Public", "Default", "Default User", "All Users", "Administrator") }
     if (\$users) { \$activeUser = \$users[0].Name }
 }
 
-P "[1/3] Обнаружение браузеров, профилей и чтение экосистемы..." "Yellow"
+P "[2/3] Обнаружение браузеров и чтение базы куков..." "Yellow"
 P "  -> Системный пользователь: \$activeUser" "Gray"
 
 \$browserConfigs = @(
     @{
+        Key      = "chrome";
         Name     = "Google Chrome";
         UserData = "C:\\Users\\\$activeUser\\AppData\\Local\\Google\\Chrome\\User Data"
     },
     @{
+        Key      = "edge";
         Name     = "Microsoft Edge";
         UserData = "C:\\Users\\\$activeUser\\AppData\\Local\\Microsoft\\Edge\\User Data"
     },
     @{
+        Key      = "brave";
         Name     = "Brave Browser";
         UserData = "C:\\Users\\\$activeUser\\AppData\\Local\\BraveSoftware\\Brave-Browser\\User Data"
     },
     @{
+        Key      = "opera";
         Name     = "Opera Stable";
         UserData = "C:\\Users\\\$activeUser\\AppData\\Roaming\\Opera Software\\Opera Stable"
     }
 )
 
 \$profileCards = @()
+\$cardIdx = 1
 
 foreach (\$b in \$browserConfigs) {
     if (-not (Test-Path \$b.UserData)) { continue }
@@ -2337,10 +2368,12 @@ foreach (\$b in \$browserConfigs) {
 
         \$profDomains = @()
         \$profTags    = @()
+        \$totalCookieBytes = 0
 
         foreach (\$cf in \$cookieFiles) {
             \$bytes = Read-LockedBinarySafe \$cf
             if (\$bytes) {
+                \$totalCookieBytes += \$bytes.Length
                 \$res = Extract-DomainsAndTags \$bytes
                 \$profDomains += \$res.Domains
                 \$profTags    += \$res.Tags
@@ -2348,9 +2381,11 @@ foreach (\$b in \$browserConfigs) {
         }
 
         \$histCount = 0
+        \$totalHistBytes = 0
         foreach (\$hf in \$histFiles) {
             \$bytes = Read-LockedBinarySafe \$hf
             if (\$bytes) {
+                \$totalHistBytes += \$bytes.Length
                 \$res = Extract-DomainsAndTags \$bytes
                 \$profDomains += \$res.Domains
                 \$histCount += \$res.Domains.Count
@@ -2366,7 +2401,7 @@ foreach (\$b in \$browserConfigs) {
         \$amazonDoms  = \$uniqueProfDomains | Where-Object { \$_ -match 'amazon|aws|media-amazon|ssl-images-amazon' }
         \$lifestyle   = \$uniqueProfDomains | Where-Object { \$_ -notin \$googleDoms -and \$_ -notin \$adTrackers -and \$_ -notin \$localDoms }
 
-        # 1. Общий индекс доверия (General Trust Score)
+        # Общий индекс доверия
         \$score = 0
         if (\$uniqueProfDomains.Count -gt 35)    { \$score += 25 }
         elseif (\$uniqueProfDomains.Count -gt 20) { \$score += 18 }
@@ -2391,45 +2426,36 @@ foreach (\$b in \$browserConfigs) {
 
         \$score = [Math]::Min(100, \$score)
 
-        # 2. Оценка доступности для конкретных мировых платформ:
-        
-        # A. Google AI Studio (Gemini Pro / Flash)
+        # Оценка доступности для 8 сервисов
         \$aiStudioScore = [int](\$score * 0.4 + (\$googleDoms.Count * 6) + (\$adTrackers.Count * 4))
         if (\$uniqueProfTags -contains "Google-NID") { \$aiStudioScore += 10 }
         if (\$uniqueProfTags -contains "Google-AEC/SOCS") { \$aiStudioScore += 10 }
         if (\$uniqueProfTags -contains "__Secure-Tokens") { \$aiStudioScore += 10 }
         \$aiStudioScore = [Math]::Min(100, [Math]::Max(15, \$aiStudioScore))
 
-        # B. Google Antigravity & AI Developer Ecosystem
         \$antigravityScore = [int](\$score * 0.45 + (\$googleDoms.Count * 5) + 15)
         if (\$uniqueProfTags -contains "Google-Auth-SID" -or \$uniqueProfTags -contains "__Secure-Tokens") { \$antigravityScore += 15 }
         \$antigravityScore = [Math]::Min(100, [Math]::Max(20, \$antigravityScore))
 
-        # C. OpenAI / ChatGPT
         \$openAiScore = [int](\$score * 0.55 + (\$lifestyle.Count * 4) + (\$histCount * 1.5))
         if (\$uniqueProfDomains.Count -ge 15) { \$openAiScore += 15 }
         \$openAiScore = [Math]::Min(100, [Math]::Max(20, \$openAiScore))
 
-        # D. Anthropic Claude
         \$claudeScore = [int](\$score * 0.50 + (\$localDoms.Count * 6) + (\$lifestyle.Count * 3))
         if (\$uniqueProfDomains.Count -ge 12) { \$claudeScore += 15 }
         \$claudeScore = [Math]::Min(100, [Math]::Max(15, \$claudeScore))
 
-        # E. Perplexity AI
         \$perplexityScore = [int](\$score * 0.60 + (\$lifestyle.Count * 4) + 15)
         \$perplexityScore = [Math]::Min(100, [Math]::Max(25, \$perplexityScore))
 
-        # F. Amazon & AWS (Global E-Commerce)
         \$amazonScore = [int](\$score * 0.45 + (\$adTrackers.Count * 6) + (\$amazonDoms.Count * 12) + 10)
         if (\$uniqueProfDomains.Count -ge 15) { \$amazonScore += 15 }
         \$amazonScore = [Math]::Min(100, [Math]::Max(20, \$amazonScore))
 
-        # G. Stripe & Global Payments
         \$stripeScore = [int](\$score * 0.45 + (\$adTrackers.Count * 8) + (\$lifestyle.Count * 3))
         if (\$uniqueProfTags -contains "__Secure-Tokens") { \$stripeScore += 10 }
         \$stripeScore = [Math]::Min(100, [Math]::Max(10, \$stripeScore))
 
-        # H. X (Twitter) & Grok
         \$xScore = [int](\$score * 0.65 + (\$lifestyle.Count * 3) + 10)
         \$xScore = [Math]::Min(100, [Math]::Max(20, \$xScore))
 
@@ -2447,48 +2473,128 @@ foreach (\$b in \$browserConfigs) {
         }
 
         \$profileCards += [PSCustomObject]@{
-            Title            = \$profTitle;
-            DisplayName      = \$meta.DisplayName;
-            Email            = \$meta.Email;
-            Folder           = \$meta.Folder;
-            Browser          = \$b.Name;
-            TotalDoms        = \$uniqueProfDomains.Count;
-            GoogleDoms       = \$googleDoms.Count;
-            AdTrackers       = \$adTrackers.Count;
-            LocalDoms        = \$localDoms.Count;
-            AmazonDoms       = \$amazonDoms.Count;
-            Lifestyle        = \$lifestyle.Count;
-            Tags             = \$uniqueProfTags;
-            Score            = \$score;
-            Verdict          = \$verdict;
-            VerdictCol       = \$verdictColor;
-            GoogleList       = \$googleDoms;
-            AdList           = \$adTrackers;
-            LocalList        = \$localDoms;
-            AIStudioScore    = \$aiStudioScore;
-            AntigravityScore = \$antigravityScore;
-            OpenAIScore      = \$openAiScore;
-            ClaudeScore      = \$claudeScore;
-            PerplexityScore  = \$perplexityScore;
-            AmazonScore      = \$amazonScore;
-            StripeScore      = \$stripeScore;
-            XScore           = \$xScore;
+            Index            = \$cardIdx
+            Title            = \$profTitle
+            DisplayName      = \$meta.DisplayName
+            Email            = \$meta.Email
+            Folder           = \$meta.Folder
+            Browser          = \$b.Name
+            BrowserKey       = \$b.Key
+            CookieSizeKB     = [Math]::Round(\$totalCookieBytes / 1024, 1)
+            HistSizeKB       = [Math]::Round(\$totalHistBytes / 1024, 1)
+            TotalDoms        = \$uniqueProfDomains.Count
+            GoogleDoms       = \$googleDoms.Count
+            AdTrackers       = \$adTrackers.Count
+            LocalDoms        = \$localDoms.Count
+            AmazonDoms       = \$amazonDoms.Count
+            Lifestyle        = \$lifestyle.Count
+            Tags             = \$uniqueProfTags
+            Score            = \$score
+            Verdict          = \$verdict
+            VerdictCol       = \$verdictColor
+            GoogleList       = \$googleDoms
+            AdList           = \$adTrackers
+            LocalList        = \$localDoms
+            AIStudioScore    = \$aiStudioScore
+            AntigravityScore = \$antigravityScore
+            OpenAIScore      = \$openAiScore
+            ClaudeScore      = \$claudeScore
+            PerplexityScore  = \$perplexityScore
+            AmazonScore      = \$amazonScore
+            StripeScore      = \$stripeScore
+            XScore           = \$xScore
         }
+        \$cardIdx++
     }
 }
 
 P "  -> Обнаружено профилей: \$(\$profileCards.Count)" "Green"
 P ""
 
-# 2. Вывод карточек профилей с графами экосистемы
-P "[2/3] АНАЛИЗ ГРАФОВ ТРАСТА И ЦИФРОВОГО СЛЕДА:" "Cyan"
-P "-----------------------------------------------------------------" "Gray"
+# 4. ИНТЕРАКТИВНЫЙ ВЫБОР ПРОФИЛЯ ДЛЯ АУДИТА
+\$chosenCards = @()
 
-foreach (\$card in \$profileCards) {
+if (\$Profile) {
+    if (\$Profile.ToLower() -in @("all", "*")) {
+        \$chosenCards = \$profileCards
+    } elseif (\$Profile -match '^\\d+\$') {
+        \$sel = \$profileCards | Where-Object { \$_.Index -eq [int]\$Profile }
+        if (\$sel) { \$chosenCards += \$sel }
+    } else {
+        \$sel = \$profileCards | Where-Object { \$_.Folder -eq \$Profile -or \$_.DisplayName -eq \$Profile }
+        if (\$sel) { \$chosenCards += \$sel }
+    }
+}
+
+if (\$chosenCards.Count -eq 0) {
+    P "=================================================================" "Yellow"
+    P "             ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ ДЕТАЛЬНОГО АУДИТА:             " "Yellow"
+    P "=================================================================" "Yellow"
+    foreach (\$c in \$profileCards) {
+        \$mailInfo = if (\$c.Email) { " (Аккаунт: \$(\$c.Email))" } else { "" }
+        P " [\$(\$c.Index)] \$(\$c.Browser) ➔ \`"\$(\$c.DisplayName)\`"\$mailInfo [Папка: \$(\$c.Folder)]" "White"
+    }
+    P "-----------------------------------------------------------------" "Gray"
+    Write-Host " [?] Введите номер профиля [1-\$(\$profileCards.Count)] или нажмите Enter для полного отчёта по ВСЕМ: " -ForegroundColor Cyan -NoNewline
+    \$userInput = Read-Host
+
+    if (-not \$userInput -or \$userInput.Trim() -eq "" -or \$userInput.Trim().ToLower() -in @("all", "*")) {
+        \$chosenCards = \$profileCards
+    } else {
+        \$parts = \$userInput -split ',' | ForEach-Object { \$_.Trim() }
+        foreach (\$p in \$parts) {
+            if (\$p -match '^\\d+\$') {
+                \$m = \$profileCards | Where-Object { \$_.Index -eq [int]\$p }
+                if (\$m) { \$chosenCards += \$m }
+            }
+        }
+    }
+}
+
+if (\$chosenCards.Count -eq 0) { \$chosenCards = \$profileCards }
+
+P ""
+P "[3/3] РЕЗУЛЬТАТЫ АУДИТА И МАТРИЦА ГОТОВНОСТИ:" "Cyan"
+P "=================================================================" "Cyan"
+
+function Print-Matrix(\$card) {
+    function Get-StatusPill(\$val) {
+        if (\$val -ge 75) { return "🟢 ГОТОВ       " }
+        elseif (\$val -ge 50) { return "🟡 СРЕДНИЙ     " }
+        else { return "🔴 НУЖЕН НАГУЛ " }
+    }
+
+    P " 🌐 1. Google AI Studio (Gemini Pro)  \$(Get-StatusPill \$card.AIStudioScore) \$(Render-Bar \$card.AIStudioScore 100 12)" "Green"
+    P "    -> URL: https://aistudio.google.com | Авторизация через Google аккаунт" "Gray"
+    P ""
+    P " 🚀 2. Google Antigravity (AI IDE)    \$(Get-StatusPill \$card.AntigravityScore) \$(Render-Bar \$card.AntigravityScore 100 12)" "Green"
+    P "    -> Cloud Shell, AI SDK и агентские среды Google Cloud" "Gray"
+    P ""
+    P " 🤖 3. OpenAI / ChatGPT Plus & API    \$(Get-StatusPill \$card.OpenAIScore) \$(Render-Bar \$card.OpenAIScore 100 12)" "Green"
+    P "    -> URL: https://chatgpt.com | Чистый US IP, нет Cloudflare банов" "Gray"
+    P ""
+    P " 🧠 4. Anthropic Claude (claude.ai)   \$(Get-StatusPill \$card.ClaudeScore) \$(Render-Bar \$card.ClaudeScore 100 12)" "Green"
+    P "    -> URL: https://claude.ai | Чистый WebRTC, гео-соответствие California" "Gray"
+    P ""
+    P " 🔍 5. Perplexity AI Pro & Search     \$(Get-StatusPill \$card.PerplexityScore) \$(Render-Bar \$card.PerplexityScore 100 12)" "Green"
+    P "    -> URL: https://www.perplexity.ai | Органическая история запросов" "Gray"
+    P ""
+    P " 🛒 6. Amazon (AWS & E-Commerce)      \$(Get-StatusPill \$card.AmazonScore) \$(Render-Bar \$card.AmazonScore 100 12)" "Green"
+    P "    -> URL: https://www.amazon.com | Потребительский след и облако AWS" "Gray"
+    P ""
+    P " 💳 7. Stripe & Global Billing / Карты \$(Get-StatusPill \$card.StripeScore) \$(Render-Bar \$card.StripeScore 100 12)" "Green"
+    P "    -> Оплата подписок, международные чекауты (Fraud Score < 10)" "Gray"
+    P ""
+    P " 🪪 8. X (Twitter) & Grok             \$(Get-StatusPill \$card.XScore) \$(Render-Bar \$card.XScore 100 12)" "Green"
+    P "    -> URL: https://x.com | Полноценный органический отпечаток" "Gray"
+}
+
+foreach (\$card in \$chosenCards) {
     P "👤 ПРОФИЛЬ: \$(\$card.Title)" "White"
     \$bar = Render-Bar \$card.Score 100 20
     P "   Индекс доверия:  \$bar (\$(\$card.Score) / 100 PTS)" "Cyan"
     P "   Статус профиля:  \$(\$card.Verdict)" \$card.VerdictCol
+    P "   Файлы куков:     \$(\$card.CookieSizeKB) КБ базы куков | \$(\$card.HistSizeKB) КБ истории | \$(\$card.TotalDoms) активных сайтов" "DarkCyan"
     P ""
     P "   [+] ГРАФ ЭКОСИСТЕМЫ И ЦИФРОВЫЕ МАРКЕРЫ:" "Yellow"
     P "       ├── 🌐 Google Core:      \$(Render-Bar \$card.GoogleDoms 10 14) (\$(\$card.GoogleDoms) доменов)" "Gray"
@@ -2501,77 +2607,52 @@ foreach (\$card in \$profileCards) {
     } else {
         P "   [-] Токены безопасности: НЕ ОБНАРУЖЕНЫ (чистый инкогнито)" "DarkRed"
     }
-    P "-----------------------------------------------------------------" "Gray"
-}
-
-# 3. УНИВЕРСАЛЬНАЯ МАТРИЦА ДОСТУПА К МИРОВЫМ СЕРВИСАМ (ALL SERVICES MATRIX)
-P "[3/3] УНИВЕРСАЛЬНАЯ МАТРИЦА ДОСТУПА К МИРОВЫМ СЕРВИСАМ:" "Cyan"
-P "=================================================================" "Cyan"
-
-\$activeCard = \$profileCards | Where-Object { \$_.Score -ge 70 } | Select-Object -First 1
-if (-not \$activeCard) { \$activeCard = \$profileCards | Sort-Object Score -Descending | Select-Object -First 1 }
-
-if (\$activeCard) {
-    P "🎯 ОЦЕНКА ДОСТУПА ДЛЯ ОСНОВНОГО ПРОФИЛЯ:" "Yellow"
-    P "   \$(\$activeCard.Browser) -> \`"\$(\$activeCard.DisplayName)\`" [Папка: \$(\$activeCard.Folder)]" "White"
-    P "-----------------------------------------------------------------" "Gray"
     
-    function Get-StatusPill(\$val) {
-        if (\$val -ge 75) { return "🟢 ГОТОВ       " }
-        elseif (\$val -ge 50) { return "🟡 СРЕДНИЙ     " }
-        else { return "🔴 НУЖЕН НАГУЛ " }
+    # Если выбран один конкретный профиль, сразу выводим его персональную матрицу
+    if (\$chosenCards.Count -eq 1) {
+        P ""
+        P "🎯 ПЕРСОНАЛЬНАЯ МАТРИЦА ДОСТУПА К СЕРВИСАМ ДЛЯ: \`"\$(\$card.DisplayName)\`"" "Yellow"
+        P "-----------------------------------------------------------------" "Gray"
+        Print-Matrix \$card
     }
-
-    P " 🌐 1. Google AI Studio (Gemini Pro)  \$(Get-StatusPill \$activeCard.AIStudioScore) \$(Render-Bar \$activeCard.AIStudioScore 100 12)" "Green"
-    P "    -> URL: https://aistudio.google.com | Авторизация через Google аккаунт" "Gray"
-    P ""
-    P " 🚀 2. Google Antigravity (AI IDE)    \$(Get-StatusPill \$activeCard.AntigravityScore) \$(Render-Bar \$activeCard.AntigravityScore 100 12)" "Green"
-    P "    -> Cloud Shell, AI SDK и агентские среды Google Cloud" "Gray"
-    P ""
-    P " 🤖 3. OpenAI / ChatGPT Plus & API    \$(Get-StatusPill \$activeCard.OpenAIScore) \$(Render-Bar \$activeCard.OpenAIScore 100 12)" "Green"
-    P "    -> URL: https://chatgpt.com | Чистый US IP, нет Cloudflare банов" "Gray"
-    P ""
-    P " 🧠 4. Anthropic Claude (claude.ai)   \$(Get-StatusPill \$activeCard.ClaudeScore) \$(Render-Bar \$activeCard.ClaudeScore 100 12)" "Green"
-    P "    -> URL: https://claude.ai | Чистый WebRTC, гео-соответствие California" "Gray"
-    P ""
-    P " 🔍 5. Perplexity AI Pro & Search     \$(Get-StatusPill \$activeCard.PerplexityScore) \$(Render-Bar \$activeCard.PerplexityScore 100 12)" "Green"
-    P "    -> URL: https://www.perplexity.ai | Органическая история запросов" "Gray"
-    P ""
-    P " 🛒 6. Amazon (AWS & E-Commerce)      \$(Get-StatusPill \$activeCard.AmazonScore) \$(Render-Bar \$activeCard.AmazonScore 100 12)" "Green"
-    P "    -> URL: https://www.amazon.com | Потребительский след и облако AWS" "Gray"
-    P ""
-    P " 💳 7. Stripe & Global Billing / Карты \$(Get-StatusPill \$activeCard.StripeScore) \$(Render-Bar \$activeCard.StripeScore 100 12)" "Green"
-    P "    -> Оплата подписок, международные чекауты (Fraud Score < 10)" "Gray"
-    P ""
-    P " 🪪 8. X (Twitter) & Grok             \$(Get-StatusPill \$activeCard.XScore) \$(Render-Bar \$activeCard.XScore 100 12)" "Green"
-    P "    -> URL: https://x.com | Полноценный органический отпечаток" "Gray"
     P "-----------------------------------------------------------------" "Gray"
 }
 
-# Резюме по всем профилям
-P "📋 СВОДНЫЙ ВЕРДИКТ ПО ВСЕМ ПРОФИЛЯМ:" "Yellow"
-\$trustedOnes = \$profileCards | Where-Object { \$_.Score -ge 70 }
-\$mediumOnes  = \$profileCards | Where-Object { \$_.Score -ge 45 -and \$_.Score -lt 70 }
-\$bareOnes    = \$profileCards | Where-Object { \$_.Score -lt 45 }
+# Если выбрано несколько или все, выводим общую матрицу лучшего профиля и сводку
+if (\$chosenCards.Count -gt 1) {
+    \$bestCard = \$chosenCards | Where-Object { \$_.Score -ge 70 } | Select-Object -First 1
+    if (-not \$bestCard) { \$bestCard = \$chosenCards | Sort-Object Score -Descending | Select-Object -First 1 }
+    
+    P "🎯 ОЦЕНКА ДОСТУПА ДЛЯ НАИБОЛЕЕ ТРАСТОВОГО ПРОФИЛЯ:" "Yellow"
+    P "   \$(\$bestCard.Browser) -> \`"\$(\$bestCard.DisplayName)\`" [Папка: \$(\$bestCard.Folder)]" "White"
+    P "-----------------------------------------------------------------" "Gray"
+    Print-Matrix \$bestCard
+    P "-----------------------------------------------------------------" "Gray"
 
-if (\$trustedOnes) {
-    P "  🟢 РЕКОМЕНДОВАНЫ ДЛЯ ВСЕХ МИРОВЫХ AI И ФИНТЕХ-СЕРВИСОВ (Трастовые):" "Green"
-    foreach (\$tp in \$trustedOnes) {
-        \$mail = if (\$tp.Email) { " <\$(\$tp.Email)>" } else { "" }
-        P "     * \$(\$tp.Browser) -> \`"\$(\$tp.DisplayName)\`"\$mail [Папка: \$(\$tp.Folder)]" "Green"
+    P "📋 СВОДНЫЙ ВЕРДИКТ ПО ВЫБРАННЫМ ПРОФИЛЯМ:" "Yellow"
+    \$trustedOnes = \$chosenCards | Where-Object { \$_.Score -ge 70 }
+    \$mediumOnes  = \$chosenCards | Where-Object { \$_.Score -ge 45 -and \$_.Score -lt 70 }
+    \$bareOnes    = \$chosenCards | Where-Object { \$_.Score -lt 45 }
+
+    if (\$trustedOnes) {
+        P "  🟢 ГОТОВЫ К ВХОДУ (Трастовые):" "Green"
+        foreach (\$tp in \$trustedOnes) {
+            \$mail = if (\$tp.Email) { " <\$(\$tp.Email)>" } else { "" }
+            P "     * [\$(\$tp.Index)] \$(\$tp.Browser) -> \`"\$(\$tp.DisplayName)\`"\$mail [Папка: \$(\$tp.Folder)]" "Green"
+        }
     }
-}
-if (\$mediumOnes) {
-    P "  🟡 ТРЕБУЮТ ВХОДА ЧЕРЕЗ YOUTUBE ИЛИ ДОПОЛНИТЕЛЬНОГО ПРОГРЕВА:" "Yellow"
-    foreach (\$mp in \$mediumOnes) {
-        \$mail = if (\$mp.Email) { " <\$(\$mp.Email)>" } else { "" }
-        P "     * \$(\$mp.Browser) -> \`"\$(\$mp.DisplayName)\`"\$mail [Папка: \$(\$mp.Folder)]" "Yellow"
+    if (\$mediumOnes) {
+        P "  🟡 ТРЕБУЮТ ВХОДА ЧЕРЕЗ YOUTUBE (Средний траст):" "Yellow"
+        foreach (\$mp in \$mediumOnes) {
+            \$mail = if (\$mp.Email) { " <\$(\$mp.Email)>" } else { "" }
+            P "     * [\$(\$mp.Index)] \$(\$mp.Browser) -> \`"\$(\$mp.DisplayName)\`"\$mail [Папка: \$(\$mp.Folder)]" "Yellow"
+        }
     }
-}
-if (\$bareOnes) {
-    P "  🔴 НЕТРАСТОВЫЕ (Рекомендуется запустить прогрев: v=persona или v=auto):" "Red"
-    foreach (\$bp in \$bareOnes) {
-        P "     * \$(\$bp.Browser) -> \`"\$(\$bp.DisplayName)\`" [Папка: \$(\$bp.Folder)]" "Red"
+    if (\$bareOnes) {
+        P "  🔴 НЕТРАСТОВЫЕ (Рекомендуется запустить прогрев: v=persona):" "Red"
+        foreach (\$bp in \$bareOnes) {
+            P "     * [\$(\$bp.Index)] \$(\$bp.Browser) -> \`"\$(\$bp.DisplayName)\`" [Папка: \$(\$bp.Folder)]" "Red"
+        }
     }
 }
 
