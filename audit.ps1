@@ -1,18 +1,20 @@
 ﻿<#
 =================================================================
- GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.0
+ GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.5
  - Profile Names & Account Emails Auto-Discovery (Local State)
  - Multi-Browser Audit: Chrome, Edge, Brave, Opera Stable
  - Non-Intrusive Locked File Reading (Zero Browser Interruptions)
  - Real-Time Trust Scoring Engine (0 - 100 PTS)
  - Visual ASCII Distribution Graphs & Ecosystem Breakdown
  - UNIVERSAL GLOBAL SERVICES READINESS MATRIX:
-   * Google AI Studio & Gemini Pro
-   * OpenAI (ChatGPT Plus & API)
-   * Anthropic Claude (claude.ai & Console)
-   * Perplexity AI (Pro & Search)
-   * Stripe & Global FinTech / Billing
-   * X (Twitter) & Grok
+   * 🌐 Google AI Studio (Gemini Pro / Flash)
+   * 🚀 Google Antigravity & AI Cloud IDE
+   * 🤖 OpenAI (ChatGPT Plus & Platform API)
+   * 🧠 Anthropic Claude (claude.ai & Console)
+   * 🔍 Perplexity AI (Pro & Search)
+   * 🛒 Amazon (AWS & Global E-Commerce US/EU)
+   * 💳 Stripe & Global FinTech / Billing
+   * 🪪 X (Twitter) & Grok
  - Authorization Key Protected
 =================================================================
 #>
@@ -133,8 +135,8 @@ function Get-BrowserProfilesMetadata($userDataPath) {
 
 Clear-Host
 P "=================================================================" "Cyan"
-P "   GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.0     " "Cyan"
-P "   Universal Global AI & FinTech Services Readiness Engine       " "DarkCyan"
+P "   GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.5     " "Cyan"
+P "   Universal Global AI, Cloud & FinTech Services Engine          " "DarkCyan"
 P "=================================================================" "Cyan"
 P ""
 
@@ -219,6 +221,7 @@ foreach ($b in $browserConfigs) {
         $googleDoms  = $uniqueProfDomains | Where-Object { $_ -match 'google|gstatic|youtube|googleadservices|googletag|gvt1' }
         $adTrackers  = $uniqueProfDomains | Where-Object { $_ -match 'doubleclick|criteo|rubicon|adnxs|casalemedia|scorecard|taboola|outbrain|bing' }
         $localDoms   = $uniqueProfDomains | Where-Object { $_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|library|tutor' }
+        $amazonDoms  = $uniqueProfDomains | Where-Object { $_ -match 'amazon|aws|media-amazon|ssl-images-amazon' }
         $lifestyle   = $uniqueProfDomains | Where-Object { $_ -notin $googleDoms -and $_ -notin $adTrackers -and $_ -notin $localDoms }
 
         # 1. Общий индекс доверия (General Trust Score)
@@ -255,26 +258,36 @@ foreach ($b in $browserConfigs) {
         if ($uniqueProfTags -contains "__Secure-Tokens") { $aiStudioScore += 10 }
         $aiStudioScore = [Math]::Min(100, [Math]::Max(15, $aiStudioScore))
 
-        # B. OpenAI / ChatGPT
+        # B. Google Antigravity & AI Developer Ecosystem
+        $antigravityScore = [int]($score * 0.45 + ($googleDoms.Count * 5) + 15)
+        if ($uniqueProfTags -contains "Google-Auth-SID" -or $uniqueProfTags -contains "__Secure-Tokens") { $antigravityScore += 15 }
+        $antigravityScore = [Math]::Min(100, [Math]::Max(20, $antigravityScore))
+
+        # C. OpenAI / ChatGPT
         $openAiScore = [int]($score * 0.55 + ($lifestyle.Count * 4) + ($histCount * 1.5))
         if ($uniqueProfDomains.Count -ge 15) { $openAiScore += 15 }
         $openAiScore = [Math]::Min(100, [Math]::Max(20, $openAiScore))
 
-        # C. Anthropic Claude
+        # D. Anthropic Claude
         $claudeScore = [int]($score * 0.50 + ($localDoms.Count * 6) + ($lifestyle.Count * 3))
         if ($uniqueProfDomains.Count -ge 12) { $claudeScore += 15 }
         $claudeScore = [Math]::Min(100, [Math]::Max(15, $claudeScore))
 
-        # D. Perplexity AI
+        # E. Perplexity AI
         $perplexityScore = [int]($score * 0.60 + ($lifestyle.Count * 4) + 15)
         $perplexityScore = [Math]::Min(100, [Math]::Max(25, $perplexityScore))
 
-        # E. Stripe & Global Payments
+        # F. Amazon & AWS (Global E-Commerce)
+        $amazonScore = [int]($score * 0.45 + ($adTrackers.Count * 6) + ($amazonDoms.Count * 12) + 10)
+        if ($uniqueProfDomains.Count -ge 15) { $amazonScore += 15 }
+        $amazonScore = [Math]::Min(100, [Math]::Max(20, $amazonScore))
+
+        # G. Stripe & Global Payments
         $stripeScore = [int]($score * 0.45 + ($adTrackers.Count * 8) + ($lifestyle.Count * 3))
         if ($uniqueProfTags -contains "__Secure-Tokens") { $stripeScore += 10 }
         $stripeScore = [Math]::Min(100, [Math]::Max(10, $stripeScore))
 
-        # F. X (Twitter) & Grok
+        # H. X (Twitter) & Grok
         $xScore = [int]($score * 0.65 + ($lifestyle.Count * 3) + 10)
         $xScore = [Math]::Min(100, [Math]::Max(20, $xScore))
 
@@ -287,7 +300,7 @@ foreach ($b in $browserConfigs) {
             $verdict = "🟡 СРЕДНИЙ ТРАСТ (Tier 2: Warmed Profile - рекомендуется плавный вход через YouTube)"
             $verdictColor = "Yellow"
         } else {
-            $verdict = "🔴 НЕТРАСТОВЫЙ / ПУСТОЙ (Tier 3: Fresh/Bare Profile - рекомендуется прогрев v=persona)"
+            $verdict = "🔴 НЕТРАСТОВЫЙ / ПУСТОЙ (Tier 3: Fresh/Bare Profile - рекомендуется прогрев: v=persona или v=auto)"
             $verdictColor = "Red"
         }
 
@@ -301,6 +314,7 @@ foreach ($b in $browserConfigs) {
             GoogleDoms       = $googleDoms.Count;
             AdTrackers       = $adTrackers.Count;
             LocalDoms        = $localDoms.Count;
+            AmazonDoms       = $amazonDoms.Count;
             Lifestyle        = $lifestyle.Count;
             Tags             = $uniqueProfTags;
             Score            = $score;
@@ -310,9 +324,11 @@ foreach ($b in $browserConfigs) {
             AdList           = $adTrackers;
             LocalList        = $localDoms;
             AIStudioScore    = $aiStudioScore;
+            AntigravityScore = $antigravityScore;
             OpenAIScore      = $openAiScore;
             ClaudeScore      = $claudeScore;
             PerplexityScore  = $perplexityScore;
+            AmazonScore      = $amazonScore;
             StripeScore      = $stripeScore;
             XScore           = $xScore;
         }
@@ -365,21 +381,27 @@ if ($activeCard) {
     }
 
     P " 🌐 1. Google AI Studio (Gemini Pro)  $(Get-StatusPill $activeCard.AIStudioScore) $(Render-Bar $activeCard.AIStudioScore 100 12)" "Green"
-    P "    -> URL: https://aistudio.google.com | Вход через Google аккаунт" "Gray"
+    P "    -> URL: https://aistudio.google.com | Авторизация через Google аккаунт" "Gray"
     P ""
-    P " 🤖 2. OpenAI / ChatGPT Plus & API    $(Get-StatusPill $activeCard.OpenAIScore) $(Render-Bar $activeCard.OpenAIScore 100 12)" "Green"
+    P " 🚀 2. Google Antigravity (AI IDE)    $(Get-StatusPill $activeCard.AntigravityScore) $(Render-Bar $activeCard.AntigravityScore 100 12)" "Green"
+    P "    -> Cloud Shell, AI SDK и агентские среды Google Cloud" "Gray"
+    P ""
+    P " 🤖 3. OpenAI / ChatGPT Plus & API    $(Get-StatusPill $activeCard.OpenAIScore) $(Render-Bar $activeCard.OpenAIScore 100 12)" "Green"
     P "    -> URL: https://chatgpt.com | Чистый US IP, нет Cloudflare банов" "Gray"
     P ""
-    P " 🧠 3. Anthropic Claude (claude.ai)   $(Get-StatusPill $activeCard.ClaudeScore) $(Render-Bar $activeCard.ClaudeScore 100 12)" "Green"
+    P " 🧠 4. Anthropic Claude (claude.ai)   $(Get-StatusPill $activeCard.ClaudeScore) $(Render-Bar $activeCard.ClaudeScore 100 12)" "Green"
     P "    -> URL: https://claude.ai | Чистый WebRTC, гео-соответствие California" "Gray"
     P ""
-    P " 🔍 4. Perplexity AI Pro & Search     $(Get-StatusPill $activeCard.PerplexityScore) $(Render-Bar $activeCard.PerplexityScore 100 12)" "Green"
+    P " 🔍 5. Perplexity AI Pro & Search     $(Get-StatusPill $activeCard.PerplexityScore) $(Render-Bar $activeCard.PerplexityScore 100 12)" "Green"
     P "    -> URL: https://www.perplexity.ai | Органическая история запросов" "Gray"
     P ""
-    P " 💳 5. Stripe & Global Billing / Карты $(Get-StatusPill $activeCard.StripeScore) $(Render-Bar $activeCard.StripeScore 100 12)" "Green"
+    P " 🛒 6. Amazon (AWS & E-Commerce)      $(Get-StatusPill $activeCard.AmazonScore) $(Render-Bar $activeCard.AmazonScore 100 12)" "Green"
+    P "    -> URL: https://www.amazon.com | Потребительский след и облако AWS" "Gray"
+    P ""
+    P " 💳 7. Stripe & Global Billing / Карты $(Get-StatusPill $activeCard.StripeScore) $(Render-Bar $activeCard.StripeScore 100 12)" "Green"
     P "    -> Оплата подписок, международные чекауты (Fraud Score < 10)" "Gray"
     P ""
-    P " 🪪 6. X (Twitter) & Grok             $(Get-StatusPill $activeCard.XScore) $(Render-Bar $activeCard.XScore 100 12)" "Green"
+    P " 🪪 8. X (Twitter) & Grok             $(Get-StatusPill $activeCard.XScore) $(Render-Bar $activeCard.XScore 100 12)" "Green"
     P "    -> URL: https://x.com | Полноценный органический отпечаток" "Gray"
     P "-----------------------------------------------------------------" "Gray"
 }
@@ -405,7 +427,7 @@ if ($mediumOnes) {
     }
 }
 if ($bareOnes) {
-    P "  🔴 НЕТРАСТОВЫЕ (Рекомендуется запустить прогрев: v=persona):" "Red"
+    P "  🔴 НЕТРАСТОВЫЕ (Рекомендуется запустить прогрев: v=persona или v=auto):" "Red"
     foreach ($bp in $bareOnes) {
         P "     * $($bp.Browser) -> `"$($bp.DisplayName)`" [Папка: $($bp.Folder)]" "Red"
     }

@@ -1,13 +1,19 @@
 ﻿<#
 =================================================================
- ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v7.0
- - 100% Guaranteed Zero Window Closing (Browser Remains Open & Maximized)
+ ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v7.5
+ - Multi-Profile Batch Support (Single, Comma-Separated '1,2' or 'all')
+ - Unique Distinct Personas Per Profile (Zero Cross-Contamination)
+ - Specialized Target Presets:
+   * all         - Comprehensive Universal Pack (Default)
+   * aistudio    - Google AI Studio & Gemini Ecosystem
+   * antigravity - Google Antigravity & AI Developer Cloud
+   * openai      - ChatGPT Plus & Platform API
+   * claude      - Anthropic Claude (claude.ai)
+   * amazon      - Amazon Prime, AWS & E-Commerce
+   * stripe      - Global SaaS Billing & FinTech Checkout
+ - 100% Guaranteed Zero Window Closing (Browser Remains Open)
  - Zero-Modifier Input: No Alt+F4, No Ctrl+W, No Stuck Modifier Keys
  - Native Triple-Click Input Reuse & Chrome Toolbar Back Button
- - Algorithmic Persona & Lore Synthesis (Based on Real VM IP/Location)
- - Experienced Human Typist Simulator with Natural Jitter & Typos
- - Safe In-Process Transition to chrome://settings/content/all
- - Universal Global Services Readiness Matrix (Google AI, OpenAI, Claude, Stripe)
  - Authorization Key Protected
 =================================================================
 #>
@@ -15,7 +21,9 @@
 param(
     [Parameter(Mandatory=$false)] [string]$Key = "akz2026",
     [Parameter(Mandatory=$false)] [string]$Browser = "",
-    [Parameter(Mandatory=$false)] [string]$Profile = ""
+    [Parameter(Mandatory=$false)] [string]$Profile = "",
+    [Parameter(Mandatory=$false)] [string]$Profiles = "",
+    [Parameter(Mandatory=$false)] [string]$Target = "all"
 )
 
 # 1. Лицензионная авторизация
@@ -46,11 +54,10 @@ public class WinInputV7 {
 
     public struct POINT { public int X; public int Y; }
 
-    // Полный сброс всех виртуальных клавиш-модификаторов для предотвращения Alt+F4 / Ctrl+W в AnyDesk
     public static void ReleaseAllModifiers() {
         byte[] keys = new byte[] { 0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
         foreach (byte k in keys) {
-            keybd_event(k, 0, 0x0002, UIntPtr.Zero); // 0x0002 = KEYEVENTF_KEYUP
+            keybd_event(k, 0, 0x0002, UIntPtr.Zero);
         }
     }
 
@@ -78,13 +85,12 @@ public class WinInputV7 {
         ReleaseAllModifiers();
         MoveSmooth(x, y, 360);
         System.Threading.Thread.Sleep(80);
-        mouse_event(0x0002, 0, 0, 0, 0); // Left Down
+        mouse_event(0x0002, 0, 0, 0, 0);
         System.Threading.Thread.Sleep(new Random().Next(60, 95));
-        mouse_event(0x0004, 0, 0, 0, 0); // Left Up
+        mouse_event(0x0004, 0, 0, 0, 0);
         ReleaseAllModifiers();
     }
 
-    // Тройной клик для чистого выделения строки БЕЗ использования опасного Ctrl+A
     public static void TripleClick(int x, int y) {
         ReleaseAllModifiers();
         MoveSmooth(x, y, 350);
@@ -125,7 +131,6 @@ function Render-Bar($value, $max, $width=18) {
     return "[$bar] $pct%"
 }
 
-# Безопасный набор текста опытным пользователем (буква за буквой, опечатки, стирание backspace)
 function Type-ExperiencedHuman([string]$targetText, [string]$typoText, [string]$correction) {
     [WinInputV7]::ReleaseAllModifiers()
     $textToType = if ($typoText) { $typoText } else { $targetText }
@@ -244,8 +249,8 @@ function Get-BrowserProfilesMetadata($userDataPath) {
 
 Clear-Host
 P "=================================================================" "Cyan"
-P "  ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v7.0            " "Cyan"
-P "  Zero-Modifier Automation & Universal Services Readiness Engine " "DarkCyan"
+P "  ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v7.5            " "Cyan"
+P "  Multi-Profile Automation & Targeted Service Presets            " "DarkCyan"
 P "=================================================================" "Cyan"
 P ""
 
@@ -289,7 +294,7 @@ $browserCatalog = @(
     }
 )
 
-# 3. Интерактивное меню выбора профиля
+# 3. Обнаружение профилей
 $availableProfiles = @()
 foreach ($b in $browserCatalog) {
     $exeFound = $null
@@ -320,12 +325,25 @@ if ($availableProfiles.Count -eq 0) {
     return
 }
 
-$chosen = $null
-if ($Browser -and $Profile) {
-    $chosen = $availableProfiles | Where-Object { $_.BrowserKey -eq $Browser.ToLower() -and ($_.Folder -eq $Profile -or $_.DisplayName -eq $Profile) } | Select-Object -First 1
+# 4. Выбор профилей (Одиночный, Мульти '1,2' или 'all')
+$chosenProfiles = @()
+
+if ($Profiles) {
+    if ($Profiles.ToLower() -in @("all", "*")) {
+        $chosenProfiles = $availableProfiles
+    } else {
+        $indexes = $Profiles -split ',' | ForEach-Object { $_.Trim() }
+        foreach ($idx in $indexes) {
+            $m = $availableProfiles | Where-Object { $_.Index -eq [int]$idx }
+            if ($m) { $chosenProfiles += $m }
+        }
+    }
+} elseif ($Browser -and $Profile) {
+    $single = $availableProfiles | Where-Object { $_.BrowserKey -eq $Browser.ToLower() -and ($_.Folder -eq $Profile -or $_.DisplayName -eq $Profile) } | Select-Object -First 1
+    if ($single) { $chosenProfiles += $single }
 }
 
-if (-not $chosen) {
+if ($chosenProfiles.Count -eq 0) {
     P "=================================================================" "Yellow"
     P "             ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ ПРОГРЕВА:                      " "Yellow"
     P "=================================================================" "Yellow"
@@ -334,26 +352,39 @@ if (-not $chosen) {
         P " [$($ap.Index)] $($ap.BrowserName) ➔ `"$($ap.DisplayName)`"$mailInfo [Папка: $($ap.Folder)]" "White"
     }
     P "-----------------------------------------------------------------" "Gray"
-    Write-Host " [?] Введите номер профиля [1-$($availableProfiles.Count)] (Нажмите Enter для 1): " -ForegroundColor Cyan -NoNewline
+    Write-Host " [?] Введите номер, список через запятую (например: 1,2) или 'all' (Enter = 1): " -ForegroundColor Cyan -NoNewline
     $userInput = Read-Host
     
-    $selectedIdx = 1
-    if ($userInput -match '^\d+$') {
-        $parsed = [int]$userInput
-        if ($parsed -ge 1 -and $parsed -le $availableProfiles.Count) {
-            $selectedIdx = $parsed
+    if (-not $userInput -or $userInput.Trim() -eq "") {
+        $chosenProfiles += ($availableProfiles | Where-Object { $_.Index -eq 1 } | Select-Object -First 1)
+    } elseif ($userInput.Trim().ToLower() -in @("all", "*")) {
+        $chosenProfiles = $availableProfiles
+    } else {
+        $parts = $userInput -split ',' | ForEach-Object { $_.Trim() }
+        foreach ($p in $parts) {
+            if ($p -match '^\d+$') {
+                $idx = [int]$p
+                $m = $availableProfiles | Where-Object { $_.Index -eq $idx }
+                if ($m) { $chosenProfiles += $m }
+            }
         }
     }
-    $chosen = $availableProfiles | Where-Object { $_.Index -eq $selectedIdx } | Select-Object -First 1
+}
+
+if ($chosenProfiles.Count -eq 0) {
+    $chosenProfiles += ($availableProfiles | Where-Object { $_.Index -eq 1 } | Select-Object -First 1)
 }
 
 P ""
-P "  -> Выбран профиль:   $($chosen.BrowserName) :: `"$($chosen.DisplayName)`"" "Green"
-P "  -> Системная папка:  $($chosen.Folder)" "Green"
+P "  -> К прогреву выбрано профилей: $($chosenProfiles.Count)" "Green"
+foreach ($cp in $chosenProfiles) {
+    P "     * $($cp.BrowserName) :: `"$($cp.DisplayName)`" [Папка: $($cp.Folder)]" "DarkCyan"
+}
+P "  -> Целевой пресет сервиса:       $($Target.ToUpper())" "Cyan"
 P ""
 
-# 4. Геолокация и синтез персонажа
-P "[1/4] Определение реального IP и синтез органической личности..." "Yellow"
+# 5. Геолокация
+P "[1/4] Определение реального IP и геолокации выхода..." "Yellow"
 $geo = $null
 $endpoints = @("http://ip-api.com/json/?fields=status,city,regionName,zip,isp,org,query", "https://ipwho.is/", "https://ipinfo.io/json")
 foreach ($url in $endpoints) {
@@ -378,280 +409,335 @@ $city = $geo.City
 $state = $geo.Region
 
 P "  -> Локация выхода:   $($geo.City), $($geo.Region) ($($geo.ISP))" "Green"
-$loreName = if ($chosen.DisplayName -and $chosen.DisplayName -ne "Default") { $chosen.DisplayName } else { "Alex" }
-P "  -> Цифровой ЛОР:     Житель $($geo.City), $loreName (Бытовой уклад, кулинария, ремонт, IT)" "DarkCyan"
 P ""
 
-$personaJourney = @(
-    @{
-        Title      = "☕ Утренний кофе и свежая пекарня во Фримонте (опечатка 'cofee' -> 'coffee')";
+# Функция генерации уникальной персоны и поисковых путей под целевой пресет
+function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
+    $names = @("Alex", "David", "Michael", "Sarah", "Emily", "James", "Daniel")
+    $name = if ($dispName -and $dispName -ne "Default") { $dispName } else { $names[($pIdx - 1) % $names.Count] }
+    
+    $journey = @()
+
+    # 1. Базовый локальный запрос (быт)
+    $journey += @{
+        Title      = "☕ Утренний кофе и свежая выпечка в $city (опечатка 'cofee' -> 'coffee')";
         TypoText   = "best cofee sho";
         Correction = "ffee shops and pastries in $city open now";
         TargetFull = "best coffee shops and pastries in $city open now";
         ClickFirst = $true
-    },
-    @{
-        Title      = "🍳 Кулинарный рецепт ужина за 20 минут (опечатка 'chiken pat' -> 'pasta')";
-        TypoText   = "easy 20 min garlic chiken pat";
-        Correction = "cken pasta recipe dinner";
-        TargetFull = "easy 20 min garlic chicken pasta recipe dinner";
-        ClickFirst = $true
-    },
-    @{
-        Title      = "🔧 Бытовой DIY ремонт сантехники (пошаговая инструкция)";
-        TypoText   = "how to replace runing tolet flapp";
-        Correction = "running toilet flapper valve step by step";
-        TargetFull = "how to replace running toilet flapper valve step by step";
-        ClickFirst = $false
-    },
-    @{
-        Title      = "🎯 Скоростной домашний интернет и отзывы провайдеров";
-        TypoText   = "best high speed fiber internet pla";
-        Correction = "ans in $city reviews";
-        TargetFull = "best high speed fiber internet plans in $city reviews";
-        ClickFirst = $true
     }
-)
 
-# 5. Надежный запуск браузера в видимом окне (100% стабильность, НИКАКИХ ЗАКРЫТИЙ)
-P "[2/4] Запуск $($chosen.BrowserName) в видимом окне (Zero-Close Guarantee)..." "Yellow"
+    # 2. Пресетные специализированные запросы
+    switch ($targetPreset.ToLower()) {
+        "aistudio" {
+            $journey += @{
+                Title      = "🌐 Исследование Google AI Studio и документации Gemini";
+                TypoText   = "google ai studio quickstar";
+                Correction = "tart python tutorial gemini api key";
+                TargetFull = "google ai studio quickstart python tutorial gemini api key";
+                ClickFirst = $true
+            }
+            $journey += @{
+                Title      = "📺 YouTube видео о возможностях Gemini 1.5 Pro";
+                TypoText   = "gemini 1.5 pro multimodal test youtub";
+                Correction = "tube demo walkthrough";
+                TargetFull = "gemini 1.5 pro multimodal test youtube demo walkthrough";
+                ClickFirst = $true
+            }
+        }
+        "antigravity" {
+            $journey += @{
+                Title      = "🚀 Google Antigravity и агентские AI SDK";
+                TypoText   = "google antigravity agent sd";
+                Correction = "sdk documentation python github";
+                TargetFull = "google antigravity agent sdk documentation python github";
+                ClickFirst = $true
+            }
+            $journey += @{
+                Title      = "☁️ Google Cloud Shell и настройка окружения";
+                TypoText   = "how to enable google cloud shel";
+                Correction = "ll web ide vscode";
+                TargetFull = "how to enable google cloud shell web ide vscode";
+                ClickFirst = $true
+            }
+        }
+        "openai" {
+            $journey += @{
+                Title      = "🤖 OpenAI ChatGPT новинки и документация API";
+                TypoText   = "openai api rate limits tie";
+                Correction = "ier 1 payment usage guide";
+                TargetFull = "openai api rate limits tier 1 payment usage guide";
+                ClickFirst = $true
+            }
+            $journey += @{
+                Title      = "⚙️ Сравнение GPT-4o и Claude 3.5 Sonnet";
+                TypoText   = "gpt-4o vs claude 3.5 sonnet benchmar";
+                Correction = "rks coding comparison";
+                TargetFull = "gpt-4o vs claude 3.5 sonnet benchmarks coding comparison";
+                ClickFirst = $true
+            }
+        }
+        "claude" {
+            $journey += @{
+                Title      = "🧠 Anthropic Claude Console и доступ Artifacts";
+                TypoText   = "anthropic claude console ap";
+                Correction = "pi billing top up guide";
+                TargetFull = "anthropic claude console api billing top up guide";
+                ClickFirst = $true
+            }
+            $journey += @{
+                Title      = "📰 Новости Кремниевой Долины и технологии в Калифорнии";
+                TypoText   = "silicon valley tech news thi";
+                Correction = "is week san francisco";
+                TargetFull = "silicon valley tech news this week san francisco";
+                ClickFirst = $true
+            }
+        }
+        "amazon" {
+            $journey += @{
+                Title      = "🛒 Покупки на Amazon и отзывы на технику";
+                TypoText   = "best mechanical keyboar";
+                Correction = "rd for mac amazon prime deals";
+                TargetFull = "best mechanical keyboard for mac amazon prime deals";
+                ClickFirst = $true
+            }
+            $journey += @{
+                Title      = "☁️ Amazon Web Services бесплатный уровень (Free Tier)";
+                TypoText   = "aws free tier limits ec2 t3.micr";
+                Correction = "cro setup guide";
+                TargetFull = "aws free tier limits ec2 t3.micro setup guide";
+                ClickFirst = $true
+            }
+        }
+        "stripe" {
+            $journey += @{
+                Title      = "💳 Международные платежи Stripe и безопасность карт";
+                TypoText   = "stripe checkout customer porta";
+                Correction = "tal recurring billing test";
+                TargetFull = "stripe checkout customer portal recurring billing test";
+                ClickFirst = $true
+            }
+            $journey += @{
+                Title      = "🏦 Проверка 3D Secure и международных транзакций";
+                TypoText   = "how 3d secure works internatinal card";
+                Correction = "onal cards verification";
+                TargetFull = "how 3d secure works international cards verification";
+                ClickFirst = $true
+            }
+        }
+        default { # "all" - Сбалансированный универсальный пакет
+            $journey += @{
+                Title      = "🍳 Быстрый домашний ужин за 20 минут (опечатка 'chiken' -> 'pasta')";
+                TypoText   = "easy 20 min garlic chiken pat";
+                Correction = "cken pasta recipe dinner";
+                TargetFull = "easy 20 min garlic chicken pasta recipe dinner";
+                ClickFirst = $true
+            }
+            $journey += @{
+                Title      = "🔧 Бытовой DIY ремонт сантехники (пошаговая инструкция)";
+                TypoText   = "how to replace runing tolet flapp";
+                Correction = "running toilet flapper valve step by step";
+                TargetFull = "how to replace running toilet flapper valve step by step";
+                ClickFirst = $false
+            }
+            $journey += @{
+                Title      = "🎯 Скоростной домашний интернет и отзывы провайдеров в $city";
+                TypoText   = "best high speed fiber internet pla";
+                Correction = "ans in $city reviews";
+                TargetFull = "best high speed fiber internet plans in $city reviews";
+                ClickFirst = $true
+            }
+        }
+    }
 
-$argsList = @(
-    "--user-data-dir=`"$($chosen.UserData)`"",
-    "--profile-directory=`"$($chosen.Folder)`"",
-    "--start-maximized",
-    "--disable-blink-features=AutomationControlled",
-    "https://www.google.com"
-)
-
-$proc = Start-Process -FilePath $chosen.BrowserExe -ArgumentList $argsList -PassThru
-Start-Sleep -Seconds 4
-
-if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {
-    [WinInputV7]::ShowWindow($proc.MainWindowHandle, 3) | Out-Null # 3 = SW_MAXIMIZE
-    [WinInputV7]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
+    return @{
+        Name    = $name
+        Journey = $journey
+    }
 }
 
-[WinInputV7]::ReleaseAllModifiers()
+# 6. Цикл прогрева по выбранным профилям
+$currentProfileNum = 1
 
-# 6. Выполнение поисковых сценариев с тройным кликом и нативной кнопкой Назад
-P "[3/4] Выполнение сценария органического поиска и серфинга..." "Yellow"
+foreach ($chosen in $chosenProfiles) {
+    P "=================================================================" "Cyan"
+    P "  ПРОГРЕВ ПРОФИЛЯ [$currentProfileNum/$($chosenProfiles.Count)]: $($chosen.BrowserName) :: `"$($chosen.DisplayName)`"" "Cyan"
+    P "=================================================================" "Cyan"
 
-$isFirstQuery = $true
-$stepIdx = 1
+    $pLore = Get-PersonaJourney $currentProfileNum $chosen.DisplayName $city $Target
+    P "  -> Имя личности:     $($pLore.Name)" "DarkCyan"
+    P "  -> Системная папка:  $($chosen.Folder)" "DarkCyan"
+    P ""
 
-foreach ($task in $personaJourney) {
-    P "  [$stepIdx/$($personaJourney.Count)] $($task.Title)" "Cyan"
+    # Запуск браузера в видимом окне (100% стабильность, Zero-Close Guarantee)
+    P "[2/4] Запуск $($chosen.BrowserName) в видимом окне (Zero-Close Guarantee)..." "Yellow"
 
-    if ($isFirstQuery) {
-        # Центральное поле ввода Google
-        $inputX = Get-Random -Min 510 -Max 650
-        $inputY = Get-Random -Min 348 -Max 380
-        [WinInputV7]::Click($inputX, $inputY)
-        $isFirstQuery = $false
-    } else {
-        # В той же вкладке: тройной клик в верхнее поле поиска (БЕЗ Ctrl+A!)
-        $topInputX = Get-Random -Min 280 -Max 420
-        $topInputY = Get-Random -Min 128 -Max 142
-        [WinInputV7]::TripleClick($topInputX, $topInputY)
-        Start-Sleep -Milliseconds 150
-        [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}")
-        Start-Sleep -Milliseconds 120
-    }
+    $argsList = @(
+        "--user-data-dir=`"$($chosen.UserData)`"",
+        "--profile-directory=`"$($chosen.Folder)`"",
+        "--start-maximized",
+        "--disable-blink-features=AutomationControlled",
+        "https://www.google.com"
+    )
 
-    P "      -> Живой ввод: '$($task.TargetFull)'" "Gray"
-    Type-ExperiencedHuman $task.TargetFull $task.TypoText $task.Correction
+    $proc = Start-Process -FilePath $chosen.BrowserExe -ArgumentList $argsList -PassThru
     Start-Sleep -Seconds 4
 
-    # Плавное чтение результатов выдачи
-    for ($s = 0; $s -lt 3; $s++) {
-        [WinInputV7]::ScrollSmooth(-180, 5)
-        $curX = Get-Random -Min 380 -Max 700
-        $curY = Get-Random -Min 280 -Max 460
-        [WinInputV7]::MoveSmooth($curX, $curY, 400)
-        Start-Sleep -Milliseconds (Get-Random -Min 400 -Max 750)
+    if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {
+        [WinInputV7]::ShowWindow($proc.MainWindowHandle, 3) | Out-Null
+        [WinInputV7]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
     }
 
-    # Переход по результату поиска и чтение страницы
-    if ($task.ClickFirst) {
-        $linkX = Get-Random -Min 370 -Max 560
-        $linkY = Get-Random -Min 325 -Max 390
-        P "      [+] Чтение открывшейся страницы сайта..." "Magenta"
-        [WinInputV7]::Click($linkX, $linkY)
+    [WinInputV7]::ReleaseAllModifiers()
+
+    # Выполнение поисковых сценариев
+    P "[3/4] Выполнение сценария органического поиска и серфинга..." "Yellow"
+    $isFirstQuery = $true
+    $stepIdx = 1
+
+    foreach ($task in $pLore.Journey) {
+        P "  [$stepIdx/$($pLore.Journey.Count)] $($task.Title)" "Cyan"
+
+        if ($isFirstQuery) {
+            $inputX = Get-Random -Min 510 -Max 650
+            $inputY = Get-Random -Min 348 -Max 380
+            [WinInputV7]::Click($inputX, $inputY)
+            $isFirstQuery = $false
+        } else {
+            $topInputX = Get-Random -Min 280 -Max 420
+            $topInputY = Get-Random -Min 128 -Max 142
+            [WinInputV7]::TripleClick($topInputX, $topInputY)
+            Start-Sleep -Milliseconds 150
+            [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}")
+            Start-Sleep -Milliseconds 120
+        }
+
+        P "      -> Живой ввод: '$($task.TargetFull)'" "Gray"
+        Type-ExperiencedHuman $task.TargetFull $task.TypoText $task.Correction
         Start-Sleep -Seconds 4
 
-        # Просмотр контента
-        [WinInputV7]::ScrollSmooth(-220, 5)
-        Start-Sleep -Milliseconds 700
-        [WinInputV7]::ScrollSmooth(-160, 5)
-        Start-Sleep -Seconds 2
+        # Плавное чтение результатов выдачи
+        for ($s = 0; $s -lt 3; $s++) {
+            [WinInputV7]::ScrollSmooth(-180, 5)
+            $curX = Get-Random -Min 380 -Max 700
+            $curY = Get-Random -Min 280 -Max 460
+            [WinInputV7]::MoveSmooth($curX, $curY, 400)
+            Start-Sleep -Milliseconds (Get-Random -Min 400 -Max 750)
+        }
 
-        # Возврат к Google Поиску через клик по нативной кнопке 'Назад' (X=18, Y=82)
-        P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
-        [WinInputV7]::Click(18, 82)
-        Start-Sleep -Seconds 3
-        [WinInputV7]::ReleaseAllModifiers()
-    } else {
-        [WinInputV7]::ScrollSmooth(250, 5)
-        Start-Sleep -Milliseconds 400
+        # Переход по результату поиска и чтение страницы
+        if ($task.ClickFirst) {
+            $linkX = Get-Random -Min 370 -Max 560
+            $linkY = Get-Random -Min 325 -Max 390
+            P "      [+] Чтение открывшейся страницы сайта..." "Magenta"
+            [WinInputV7]::Click($linkX, $linkY)
+            Start-Sleep -Seconds 4
+
+            # Просмотр контента
+            [WinInputV7]::ScrollSmooth(-220, 5)
+            Start-Sleep -Milliseconds 700
+            [WinInputV7]::ScrollSmooth(-160, 5)
+            Start-Sleep -Seconds 2
+
+            # Возврат к Google Поиску через клик по нативной кнопке 'Назад' (X=18, Y=82)
+            P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
+            [WinInputV7]::Click(18, 82)
+            Start-Sleep -Seconds 3
+            [WinInputV7]::ReleaseAllModifiers()
+        } else {
+            [WinInputV7]::ScrollSmooth(250, 5)
+            Start-Sleep -Milliseconds 400
+        }
+
+        $stepIdx++
     }
 
-    $stepIdx++
-}
+    # Переход на страницу Cookie Settings в открытом окне
+    P ""
+    P "[4/4] Анализ накопленной базы куков и переход в настройки браузера..." "Yellow"
 
-# 7. Переход на страницу Cookie Settings прямо в открытом браузере (НЕ ЗАКРЫВАЯ БРАУЗЕР!)
-P ""
-P "[4/4] Анализ накопленной базы куков и переход в настройки браузера..." "Yellow"
+    [WinInputV7]::TripleClick(350, 82)
+    Start-Sleep -Milliseconds 150
+    [System.Windows.Forms.SendKeys]::SendWait("chrome://settings/content/all{ENTER}")
+    Start-Sleep -Seconds 2
+    [WinInputV7]::ReleaseAllModifiers()
 
-# Тройной клик в адресную строку Chrome (X=350, Y=82) и переход на chrome://settings/content/all
-[WinInputV7]::TripleClick(350, 82)
-Start-Sleep -Milliseconds 150
-[System.Windows.Forms.SendKeys]::SendWait("chrome://settings/content/all{ENTER}")
-Start-Sleep -Seconds 2
-[WinInputV7]::ReleaseAllModifiers()
+    # Анализ куков текущего профиля на лету
+    $profPath = Join-Path $chosen.UserData $chosen.Folder
+    $cookieFiles = @(
+        (Join-Path $profPath "Network\Cookies"),
+        (Join-Path $profPath "Network\Cookies-wal"),
+        (Join-Path $profPath "Cookies"),
+        (Join-Path $profPath "Cookies-wal")
+    )
+    $histFiles = @(
+        (Join-Path $profPath "History"),
+        (Join-Path $profPath "History-wal")
+    )
 
-# Чтение куков и истории на лету через безопасный шаринг (FileShare.ReadWrite)
-$profPath = Join-Path $chosen.UserData $chosen.Folder
-$cookieFiles = @(
-    (Join-Path $profPath "Network\Cookies"),
-    (Join-Path $profPath "Network\Cookies-wal"),
-    (Join-Path $profPath "Cookies"),
-    (Join-Path $profPath "Cookies-wal")
-)
-$histFiles = @(
-    (Join-Path $profPath "History"),
-    (Join-Path $profPath "History-wal")
-)
+    $profDomains = @()
+    $profTags    = @()
 
-$profDomains = @()
-$profTags    = @()
-
-foreach ($cf in $cookieFiles) {
-    $bytes = Read-LockedBinarySafe $cf
-    if ($bytes) {
-        $res = Extract-DomainsAndTags $bytes
-        $profDomains += $res.Domains
-        $profTags    += $res.Tags
+    foreach ($cf in $cookieFiles) {
+        $bytes = Read-LockedBinarySafe $cf
+        if ($bytes) {
+            $res = Extract-DomainsAndTags $bytes
+            $profDomains += $res.Domains
+            $profTags    += $res.Tags
+        }
     }
-}
 
-foreach ($hf in $histFiles) {
-    $bytes = Read-LockedBinarySafe $hf
-    if ($bytes) {
-        $res = Extract-DomainsAndTags $bytes
-        $profDomains += $res.Domains
+    foreach ($hf in $histFiles) {
+        $bytes = Read-LockedBinarySafe $hf
+        if ($bytes) {
+            $res = Extract-DomainsAndTags $bytes
+            $profDomains += $res.Domains
+        }
     }
+
+    $uDoms = $profDomains | Select-Object -Unique | Sort-Object
+    $uTags = $profTags | Select-Object -Unique
+
+    $googleDoms = $uDoms | Where-Object { $_ -match 'google|gstatic|youtube|doubleclick|gvt1' }
+    $adTrackers = $uDoms | Where-Object { $_ -match 'doubleclick|criteo|rubicon|adnxs|scorecard|taboola|bing' }
+    $localDoms  = $uDoms | Where-Object { $_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|tutor' }
+    $amazonDoms = $uDoms | Where-Object { $_ -match 'amazon|aws' }
+    $otherDoms  = $uDoms | Where-Object { $_ -notin $googleDoms -and $_ -notin $adTrackers -and $_ -notin $localDoms }
+
+    $score = 0
+    if ($uDoms.Count -gt 35)    { $score += 25 }
+    elseif ($uDoms.Count -gt 20) { $score += 18 }
+    elseif ($uDoms.Count -gt 8)  { $score += 10 }
+    elseif ($uDoms.Count -gt 0)  { $score += 4 }
+
+    if ($googleDoms.Count -ge 5) { $score += 15 }
+    elseif ($googleDoms.Count -ge 1) { $score += 8 }
+    if ($uTags -contains "Google-NID" -or $uTags -contains "Cookie-Consent") { $score += 5 }
+    if ($uTags -contains "__Secure-Tokens" -or $uTags -contains "Google-Auth-SID") { $score += 5 }
+
+    if ($adTrackers.Count -ge 4) { $score += 20 }
+    elseif ($adTrackers.Count -ge 1) { $score += 12 }
+
+    if ($localDoms.Count -ge 3) { $score += 12 }
+    elseif ($localDoms.Count -ge 1) { $score += 6 }
+
+    if ($otherDoms.Count -ge 5) { $score += 10 }
+    elseif ($otherDoms.Count -ge 1) { $score += 5 }
+
+    $score = [Math]::Min(100, $score)
+
+    P ""
+    P "  ИТОГИ ПРОГРЕВА ПРОФИЛЯ `"$($chosen.DisplayName)`":" "Green"
+    P "  Нагуляно:  $($uDoms.Count) доменов | Индекс траста: $(Render-Bar $score 100 16) ($score / 100 PTS)" "White"
+    if ($googleDoms) { P "  🌐 Google Core: $($googleDoms.Count) | 🎯 Трекеры: $($adTrackers.Count) | 📍 Локальные: $($localDoms.Count)" "Gray" }
+    P ""
+
+    $currentProfileNum++
 }
-
-$uDoms = $profDomains | Select-Object -Unique | Sort-Object
-$uTags = $profTags | Select-Object -Unique
-
-$googleDoms = $uDoms | Where-Object { $_ -match 'google|gstatic|youtube|doubleclick|gvt1' }
-$adTrackers = $uDoms | Where-Object { $_ -match 'doubleclick|criteo|rubicon|adnxs|scorecard|taboola|bing' }
-$localDoms  = $uDoms | Where-Object { $_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|tutor' }
-$otherDoms  = $uDoms | Where-Object { $_ -notin $googleDoms -and $_ -notin $adTrackers -and $_ -notin $localDoms }
-
-# Расчёт общего индекса доверия и сервисных баллов
-$score = 0
-if ($uDoms.Count -gt 35)    { $score += 25 }
-elseif ($uDoms.Count -gt 20) { $score += 18 }
-elseif ($uDoms.Count -gt 8)  { $score += 10 }
-elseif ($uDoms.Count -gt 0)  { $score += 4 }
-
-if ($googleDoms.Count -ge 5) { $score += 15 }
-elseif ($googleDoms.Count -ge 1) { $score += 8 }
-if ($uTags -contains "Google-NID" -or $uTags -contains "Cookie-Consent") { $score += 5 }
-if ($uTags -contains "__Secure-Tokens" -or $uTags -contains "Google-Auth-SID") { $score += 5 }
-
-if ($adTrackers.Count -ge 4) { $score += 20 }
-elseif ($adTrackers.Count -ge 1) { $score += 12 }
-
-if ($localDoms.Count -ge 3) { $score += 12 }
-elseif ($localDoms.Count -ge 1) { $score += 6 }
-
-if ($otherDoms.Count -ge 5) { $score += 10 }
-elseif ($otherDoms.Count -ge 1) { $score += 5 }
-
-$score = [Math]::Min(100, $score)
-
-# Оценка для мировых сервисов
-$aiStudioScore = [int]($score * 0.4 + ($googleDoms.Count * 6) + ($adTrackers.Count * 4))
-if ($uTags -contains "Google-NID") { $aiStudioScore += 10 }
-if ($uTags -contains "Google-AEC/SOCS") { $aiStudioScore += 10 }
-if ($uTags -contains "__Secure-Tokens") { $aiStudioScore += 10 }
-$aiStudioScore = [Math]::Min(100, [Math]::Max(25, $aiStudioScore))
-
-$openAiScore = [int]($score * 0.55 + ($otherDoms.Count * 4) + 15)
-$openAiScore = [Math]::Min(100, [Math]::Max(30, $openAiScore))
-
-$claudeScore = [int]($score * 0.50 + ($localDoms.Count * 6) + 15)
-$claudeScore = [Math]::Min(100, [Math]::Max(25, $claudeScore))
-
-$perplexityScore = [int]($score * 0.60 + ($otherDoms.Count * 4) + 15)
-$perplexityScore = [Math]::Min(100, [Math]::Max(30, $perplexityScore))
-
-$stripeScore = [int]($score * 0.45 + ($adTrackers.Count * 8) + 15)
-$stripeScore = [Math]::Min(100, [Math]::Max(25, $stripeScore))
-
-$xScore = [int]($score * 0.65 + 20)
-$xScore = [Math]::Min(100, [Math]::Max(30, $xScore))
 
 P "=================================================================" "Green"
-P "     ULTRA DIGITAL PERSONA & HUMAN BEHAVIOR REPORT v7.0          " "Green"
+P "     ВСЕ ВЫБРАННЫЕ ПРОФИЛИ УСПЕШНО ПРОГРЕТЫ И ГОТОВЫ К РАБОТЕ     " "Green"
 P "=================================================================" "Green"
-P "  Браузер:   $($chosen.BrowserName)" "White"
-P "  Профиль:   `"$($chosen.DisplayName)`" [Папка: $($chosen.Folder)]" "Cyan"
-P "  Локация:   $($geo.City), $($geo.Region) ($($geo.ISP))" "White"
-P "  Нагуляно:  $($uDoms.Count) активных доменов в профиле" "White"
-P ""
-P "[-] ГРАФ ТРАСТА И ЭКОСИСТЕМЫ ПРОФИЛЯ:" "Cyan"
-if ($googleDoms) {
-    P "  ├── 🌐 Google Core:      $($googleDoms.Count) доменов" "Yellow"
-    $googleDoms | Select-Object -First 6 | ForEach-Object { P "  │   ├── $_" "Gray" }
-}
-if ($adTrackers) {
-    P "  ├── 🎯 Ads & Trackers:    $($adTrackers.Count) трекеров" "Yellow"
-    $adTrackers | Select-Object -First 6 | ForEach-Object { P "  │   ├── $_" "Gray" }
-}
-if ($localDoms) {
-    P "  ├── 📍 Локальный нагул:   $($localDoms.Count) сервисов ($($geo.City))" "Yellow"
-    $localDoms | Select-Object -First 6 | ForEach-Object { P "  │   ├── $_" "Gray" }
-}
-if ($otherDoms) {
-    P "  └── 🍳 Бытовой нагул:     $($otherDoms.Count) ресурсов (рецепты, DIY)" "Yellow"
-    $otherDoms | Select-Object -First 6 | ForEach-Object { P "      ├── $_" "Gray" }
-}
-
-P ""
-P "=================================================================" "Cyan"
-P "  УНИВЕРСАЛЬНАЯ МАТРИЦА ДОСТУПА К МИРОВЫМ СЕРВИСАМ (ALL SERVICES): " "Cyan"
-P "=================================================================" "Cyan"
-
-function Get-StatusPill($val) {
-    if ($val -ge 75) { return "🟢 ГОТОВ       " }
-    elseif ($val -ge 50) { return "🟡 СРЕДНИЙ     " }
-    else { return "🔴 НУЖЕН НАГУЛ " }
-}
-
-P " 🌐 1. Google AI Studio (Gemini Pro)  $(Get-StatusPill $aiStudioScore) $(Render-Bar $aiStudioScore 100 12)" "Green"
-P "    -> Вход: https://aistudio.google.com | Готов к авторизации" "Gray"
-P ""
-P " 🤖 2. OpenAI / ChatGPT Plus & API    $(Get-StatusPill $openAiScore) $(Render-Bar $openAiScore 100 12)" "Green"
-P "    -> Вход: https://chatgpt.com | Чистый US IP, нет Cloudflare банов" "Gray"
-P ""
-P " 🧠 3. Anthropic Claude (claude.ai)   $(Get-StatusPill $claudeScore) $(Render-Bar $claudeScore 100 12)" "Green"
-P "    -> Вход: https://claude.ai | Чистый WebRTC, локация Fremont CA" "Gray"
-P ""
-P " 🔍 4. Perplexity AI Pro & Search     $(Get-StatusPill $perplexityScore) $(Render-Bar $perplexityScore 100 12)" "Green"
-P "    -> Вход: https://www.perplexity.ai | Органический поисковый след" "Gray"
-P ""
-P " 💳 5. Stripe & Global Billing / Оплаты $(Get-StatusPill $stripeScore) $(Render-Bar $stripeScore 100 12)" "Green"
-P "    -> Международные чекауты и оплата зарубежных подписок" "Gray"
-P ""
-P " 🪪 6. X (Twitter) & Grok             $(Get-StatusPill $xScore) $(Render-Bar $xScore 100 12)" "Green"
-P "    -> Вход: https://x.com | Полноценный человеческий отпечаток" "Gray"
-P "=================================================================" "Cyan"
-P ""
 P "[✓] Браузер Chrome остаётся открытым в разделе 'Настройки файлов cookie'!" "Green"
 P "[✓] Вы можете просмотреть сохраненные куки прямо в открытом окне." "Green"
 
