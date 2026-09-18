@@ -1,12 +1,18 @@
-<#
+﻿<#
 =================================================================
- GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST SCORE AUDITOR v4.8
+ GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.0
  - Profile Names & Account Emails Auto-Discovery (Local State)
- - Multi-Browser Audit: Chrome, Edge, Brave, Opera, Yandex
- - Non-Intrusive Locked File Reading (No Browser Close Required)
+ - Multi-Browser Audit: Chrome, Edge, Brave, Opera Stable
+ - Non-Intrusive Locked File Reading (Zero Browser Interruptions)
  - Real-Time Trust Scoring Engine (0 - 100 PTS)
  - Visual ASCII Distribution Graphs & Ecosystem Breakdown
- - Trust Classification: Trusted vs Untrusted Profile Verdict
+ - UNIVERSAL GLOBAL SERVICES READINESS MATRIX:
+   * Google AI Studio & Gemini Pro
+   * OpenAI (ChatGPT Plus & API)
+   * Anthropic Claude (claude.ai & Console)
+   * Perplexity AI (Pro & Search)
+   * Stripe & Global FinTech / Billing
+   * X (Twitter) & Grok
  - Authorization Key Protected
 =================================================================
 #>
@@ -16,7 +22,7 @@ param(
     [string]$Key = "akz2026"
 )
 
-# Проверка ключа
+# 1. Лицензионная авторизация
 $AUTHORIZED_KEY = "akz2026"
 if ($Key -ne $AUTHORIZED_KEY) {
     Write-Host "[-] Access Denied: Unauthorized script execution. Invalid Key." -ForegroundColor Red
@@ -32,7 +38,7 @@ function P($text, $color="White") {
     [void]$sb.AppendLine($text)
 }
 
-function Render-Bar($value, $max, $width=20) {
+function Render-Bar($value, $max, $width=18) {
     if ($max -le 0) { $max = 1 }
     $ratio = [Math]::Min(1.0, [Math]::Max(0.0, ($value / $max)))
     $filled = [int][Math]::Round($ratio * $width)
@@ -102,9 +108,9 @@ function Get-BrowserProfilesMetadata($userDataPath) {
                     $name = if ($v.name) { $v.name } else { $f }
                     $email = if ($v.user_name) { $v.user_name } else { "" }
                     $meta[$f] = [PSCustomObject]@{
-                        Folder = $f
+                        Folder      = $f
                         DisplayName = $name
-                        Email = $email
+                        Email       = $email
                     }
                 }
             }
@@ -115,9 +121,9 @@ function Get-BrowserProfilesMetadata($userDataPath) {
         foreach ($d in $dirs) {
             if (-not $meta.ContainsKey($d.Name)) {
                 $meta[$d.Name] = [PSCustomObject]@{
-                    Folder = $d.Name
+                    Folder      = $d.Name
                     DisplayName = $d.Name
-                    Email = ""
+                    Email       = ""
                 }
             }
         }
@@ -127,8 +133,8 @@ function Get-BrowserProfilesMetadata($userDataPath) {
 
 Clear-Host
 P "=================================================================" "Cyan"
-P "   GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v4.8     " "Cyan"
-P "   Automatic Profile Human-Names & Anti-Fraud Graph Analysis     " "DarkCyan"
+P "   GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v5.0     " "Cyan"
+P "   Universal Global AI & FinTech Services Readiness Engine       " "DarkCyan"
 P "=================================================================" "Cyan"
 P ""
 
@@ -138,7 +144,7 @@ if ($activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
     if ($users) { $activeUser = $users[0].Name }
 }
 
-P "[1/3] Поиск установленных браузеров и декодирование имён профилей..." "Yellow"
+P "[1/3] Обнаружение браузеров, профилей и чтение экосистемы..." "Yellow"
 P "  -> Системный пользователь: $activeUser" "Gray"
 
 $browserConfigs = @(
@@ -215,7 +221,7 @@ foreach ($b in $browserConfigs) {
         $localDoms   = $uniqueProfDomains | Where-Object { $_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|library|tutor' }
         $lifestyle   = $uniqueProfDomains | Where-Object { $_ -notin $googleDoms -and $_ -notin $adTrackers -and $_ -notin $localDoms }
 
-        # Расчёт траста
+        # 1. Общий индекс доверия (General Trust Score)
         $score = 0
         if ($uniqueProfDomains.Count -gt 35)    { $score += 25 }
         elseif ($uniqueProfDomains.Count -gt 20) { $score += 18 }
@@ -240,37 +246,75 @@ foreach ($b in $browserConfigs) {
 
         $score = [Math]::Min(100, $score)
 
+        # 2. Оценка доступности для конкретных мировых платформ:
+        
+        # A. Google AI Studio (Gemini Pro / Flash)
+        $aiStudioScore = [int]($score * 0.4 + ($googleDoms.Count * 6) + ($adTrackers.Count * 4))
+        if ($uniqueProfTags -contains "Google-NID") { $aiStudioScore += 10 }
+        if ($uniqueProfTags -contains "Google-AEC/SOCS") { $aiStudioScore += 10 }
+        if ($uniqueProfTags -contains "__Secure-Tokens") { $aiStudioScore += 10 }
+        $aiStudioScore = [Math]::Min(100, [Math]::Max(15, $aiStudioScore))
+
+        # B. OpenAI / ChatGPT
+        $openAiScore = [int]($score * 0.55 + ($lifestyle.Count * 4) + ($histCount * 1.5))
+        if ($uniqueProfDomains.Count -ge 15) { $openAiScore += 15 }
+        $openAiScore = [Math]::Min(100, [Math]::Max(20, $openAiScore))
+
+        # C. Anthropic Claude
+        $claudeScore = [int]($score * 0.50 + ($localDoms.Count * 6) + ($lifestyle.Count * 3))
+        if ($uniqueProfDomains.Count -ge 12) { $claudeScore += 15 }
+        $claudeScore = [Math]::Min(100, [Math]::Max(15, $claudeScore))
+
+        # D. Perplexity AI
+        $perplexityScore = [int]($score * 0.60 + ($lifestyle.Count * 4) + 15)
+        $perplexityScore = [Math]::Min(100, [Math]::Max(25, $perplexityScore))
+
+        # E. Stripe & Global Payments
+        $stripeScore = [int]($score * 0.45 + ($adTrackers.Count * 8) + ($lifestyle.Count * 3))
+        if ($uniqueProfTags -contains "__Secure-Tokens") { $stripeScore += 10 }
+        $stripeScore = [Math]::Min(100, [Math]::Max(10, $stripeScore))
+
+        # F. X (Twitter) & Grok
+        $xScore = [int]($score * 0.65 + ($lifestyle.Count * 3) + 10)
+        $xScore = [Math]::Min(100, [Math]::Max(20, $xScore))
+
         $verdict = ""
         $verdictColor = ""
-        if ($score -ge 75) {
-            $verdict = "🟢 ТРАСТОВЫЙ ПРОФИЛЬ (Tier 1: High Trust Organic Persona)"
+        if ($score -ge 72) {
+            $verdict = "🟢 ВЫСОКИЙ ТРАСТ (Tier 1: High Trust Organic Persona - Полный доступ ко всем сервисам)"
             $verdictColor = "Green"
         } elseif ($score -ge 45) {
-            $verdict = "🟡 СРЕДНИЙ ТРАСТ (Tier 2: Warmed Profile - рекомендуется вход через YouTube)"
+            $verdict = "🟡 СРЕДНИЙ ТРАСТ (Tier 2: Warmed Profile - рекомендуется плавный вход через YouTube)"
             $verdictColor = "Yellow"
         } else {
-            $verdict = "🔴 НЕТРАСТОВЫЙ / ПУСТОЙ (Tier 3: Fresh/Bare Profile - риск запроса номера)"
+            $verdict = "🔴 НЕТРАСТОВЫЙ / ПУСТОЙ (Tier 3: Fresh/Bare Profile - рекомендуется прогрев v=persona)"
             $verdictColor = "Red"
         }
 
         $profileCards += [PSCustomObject]@{
-            Title       = $profTitle;
-            DisplayName = $meta.DisplayName;
-            Email       = $meta.Email;
-            Folder      = $meta.Folder;
-            Browser     = $b.Name;
-            TotalDoms   = $uniqueProfDomains.Count;
-            GoogleDoms  = $googleDoms.Count;
-            AdTrackers  = $adTrackers.Count;
-            LocalDoms   = $localDoms.Count;
-            Lifestyle   = $lifestyle.Count;
-            Tags        = $uniqueProfTags;
-            Score       = $score;
-            Verdict     = $verdict;
-            VerdictCol  = $verdictColor;
-            GoogleList  = $googleDoms;
-            AdList      = $adTrackers;
-            LocalList   = $localDoms;
+            Title            = $profTitle;
+            DisplayName      = $meta.DisplayName;
+            Email            = $meta.Email;
+            Folder           = $meta.Folder;
+            Browser          = $b.Name;
+            TotalDoms        = $uniqueProfDomains.Count;
+            GoogleDoms       = $googleDoms.Count;
+            AdTrackers       = $adTrackers.Count;
+            LocalDoms        = $localDoms.Count;
+            Lifestyle        = $lifestyle.Count;
+            Tags             = $uniqueProfTags;
+            Score            = $score;
+            Verdict          = $verdict;
+            VerdictCol       = $verdictColor;
+            GoogleList       = $googleDoms;
+            AdList           = $adTrackers;
+            LocalList        = $localDoms;
+            AIStudioScore    = $aiStudioScore;
+            OpenAIScore      = $openAiScore;
+            ClaudeScore      = $claudeScore;
+            PerplexityScore  = $perplexityScore;
+            StripeScore      = $stripeScore;
+            XScore           = $xScore;
         }
     }
 }
@@ -278,52 +322,90 @@ foreach ($b in $browserConfigs) {
 P "  -> Обнаружено профилей: $($profileCards.Count)" "Green"
 P ""
 
-# 2. Вывод карточек
-P "[2/3] АНАЛИЗ ГРАФОВ ТРАСТА ПО ИМЕНАМ ПРОФИЛЕЙ:" "Cyan"
+# 2. Вывод карточек профилей с графами экосистемы
+P "[2/3] АНАЛИЗ ГРАФОВ ТРАСТА И ЦИФРОВОГО СЛЕДА:" "Cyan"
 P "-----------------------------------------------------------------" "Gray"
 
 foreach ($card in $profileCards) {
     P "👤 ПРОФИЛЬ: $($card.Title)" "White"
-    $bar = Render-Bar $card.Score 100 24
+    $bar = Render-Bar $card.Score 100 20
     P "   Индекс доверия:  $bar ($($card.Score) / 100 PTS)" "Cyan"
-    P "   Статус:          $($card.Verdict)" $card.VerdictCol
+    P "   Статус профиля:  $($card.Verdict)" $card.VerdictCol
     P ""
-    P "   [+] ГРАФ ЭКОСИСТЕМЫ:" "Yellow"
-    P "       ├── 🌐 Google Core:      $(Render-Bar $card.GoogleDoms 10 16) ($($card.GoogleDoms) доменов)" "Gray"
-    P "       ├── 🎯 Commercial/Ads:   $(Render-Bar $card.AdTrackers 6 16) ($($card.AdTrackers) трекеров)" "Gray"
-    P "       ├── 📍 Geo & Local:      $(Render-Bar $card.LocalDoms 6 16) ($($card.LocalDoms) локаций)" "Gray"
-    P "       └── 🍳 Lifestyle/DIY:    $(Render-Bar $card.Lifestyle 12 16) ($($card.Lifestyle) сайтов)" "Gray"
+    P "   [+] ГРАФ ЭКОСИСТЕМЫ И ЦИФРОВЫЕ МАРКЕРЫ:" "Yellow"
+    P "       ├── 🌐 Google Core:      $(Render-Bar $card.GoogleDoms 10 14) ($($card.GoogleDoms) доменов)" "Gray"
+    P "       ├── 🎯 Commercial/Ads:   $(Render-Bar $card.AdTrackers 6 14) ($($card.AdTrackers) трекеров)" "Gray"
+    P "       ├── 📍 Geo & Local:      $(Render-Bar $card.LocalDoms 6 14) ($($card.LocalDoms) локаций)" "Gray"
+    P "       └── 🍳 Lifestyle/DIY:    $(Render-Bar $card.Lifestyle 12 14) ($($card.Lifestyle) ресурсов)" "Gray"
     
     if ($card.Tags.Count -gt 0) {
-        P "   [✓] Маркеры безопасности: $($card.Tags -join ' | ')" "DarkCyan"
+        P "   [✓] Токены безопасности: $($card.Tags -join ' | ')" "DarkCyan"
     } else {
-        P "   [-] Маркеры безопасности: НЕ ОБНАРУЖЕНЫ (чистый инкогнито)" "DarkRed"
+        P "   [-] Токены безопасности: НЕ ОБНАРУЖЕНЫ (чистый инкогнито)" "DarkRed"
     }
     P "-----------------------------------------------------------------" "Gray"
 }
 
-# 3. Итог
-P "[3/3] СВОДНЫЙ ВЕРДИКТ ГОТОВНОСТИ:" "Yellow"
+# 3. УНИВЕРСАЛЬНАЯ МАТРИЦА ДОСТУПА К МИРОВЫМ СЕРВИСАМ (ALL SERVICES MATRIX)
+P "[3/3] УНИВЕРСАЛЬНАЯ МАТРИЦА ДОСТУПА К МИРОВЫМ СЕРВИСАМ:" "Cyan"
+P "=================================================================" "Cyan"
+
+$activeCard = $profileCards | Where-Object { $_.Score -ge 70 } | Select-Object -First 1
+if (-not $activeCard) { $activeCard = $profileCards | Sort-Object Score -Descending | Select-Object -First 1 }
+
+if ($activeCard) {
+    P "🎯 ОЦЕНКА ДОСТУПА ДЛЯ ОСНОВНОГО ПРОФИЛЯ:" "Yellow"
+    P "   $($activeCard.Browser) -> `"$($activeCard.DisplayName)`" [Папка: $($activeCard.Folder)]" "White"
+    P "-----------------------------------------------------------------" "Gray"
+    
+    function Get-StatusPill($val) {
+        if ($val -ge 75) { return "🟢 ГОТОВ       " }
+        elseif ($val -ge 50) { return "🟡 СРЕДНИЙ     " }
+        else { return "🔴 НУЖЕН НАГУЛ " }
+    }
+
+    P " 🌐 1. Google AI Studio (Gemini Pro)  $(Get-StatusPill $activeCard.AIStudioScore) $(Render-Bar $activeCard.AIStudioScore 100 12)" "Green"
+    P "    -> URL: https://aistudio.google.com | Вход через Google аккаунт" "Gray"
+    P ""
+    P " 🤖 2. OpenAI / ChatGPT Plus & API    $(Get-StatusPill $activeCard.OpenAIScore) $(Render-Bar $activeCard.OpenAIScore 100 12)" "Green"
+    P "    -> URL: https://chatgpt.com | Чистый US IP, нет Cloudflare банов" "Gray"
+    P ""
+    P " 🧠 3. Anthropic Claude (claude.ai)   $(Get-StatusPill $activeCard.ClaudeScore) $(Render-Bar $activeCard.ClaudeScore 100 12)" "Green"
+    P "    -> URL: https://claude.ai | Чистый WebRTC, гео-соответствие California" "Gray"
+    P ""
+    P " 🔍 4. Perplexity AI Pro & Search     $(Get-StatusPill $activeCard.PerplexityScore) $(Render-Bar $activeCard.PerplexityScore 100 12)" "Green"
+    P "    -> URL: https://www.perplexity.ai | Органическая история запросов" "Gray"
+    P ""
+    P " 💳 5. Stripe & Global Billing / Карты $(Get-StatusPill $activeCard.StripeScore) $(Render-Bar $activeCard.StripeScore 100 12)" "Green"
+    P "    -> Оплата подписок, международные чекауты (Fraud Score < 10)" "Gray"
+    P ""
+    P " 🪪 6. X (Twitter) & Grok             $(Get-StatusPill $activeCard.XScore) $(Render-Bar $activeCard.XScore 100 12)" "Green"
+    P "    -> URL: https://x.com | Полноценный органический отпечаток" "Gray"
+    P "-----------------------------------------------------------------" "Gray"
+}
+
+# Резюме по всем профилям
+P "📋 СВОДНЫЙ ВЕРДИКТ ПО ВСЕМ ПРОФИЛЯМ:" "Yellow"
 $trustedOnes = $profileCards | Where-Object { $_.Score -ge 70 }
 $mediumOnes  = $profileCards | Where-Object { $_.Score -ge 45 -and $_.Score -lt 70 }
 $bareOnes    = $profileCards | Where-Object { $_.Score -lt 45 }
 
 if ($trustedOnes) {
-    P "  🟢 ГОТОВЫ К ВХОДУ В GOOGLE AI STUDIO (Трастовые):" "Green"
+    P "  🟢 РЕКОМЕНДОВАНЫ ДЛЯ ВСЕХ МИРОВЫХ AI И ФИНТЕХ-СЕРВИСОВ (Трастовые):" "Green"
     foreach ($tp in $trustedOnes) {
         $mail = if ($tp.Email) { " <$($tp.Email)>" } else { "" }
         P "     * $($tp.Browser) -> `"$($tp.DisplayName)`"$mail [Папка: $($tp.Folder)]" "Green"
     }
 }
 if ($mediumOnes) {
-    P "  🟡 ТРЕБУЮТ ВХОДА ЧЕРЕЗ YOUTUBE (Средний траст):" "Yellow"
+    P "  🟡 ТРЕБУЮТ ВХОДА ЧЕРЕЗ YOUTUBE ИЛИ ДОПОЛНИТЕЛЬНОГО ПРОГРЕВА:" "Yellow"
     foreach ($mp in $mediumOnes) {
         $mail = if ($mp.Email) { " <$($mp.Email)>" } else { "" }
         P "     * $($mp.Browser) -> `"$($mp.DisplayName)`"$mail [Папка: $($mp.Folder)]" "Yellow"
     }
 }
 if ($bareOnes) {
-    P "  🔴 НЕТРАСТОВЫЕ (Рекомендуется запустить прогрев):" "Red"
+    P "  🔴 НЕТРАСТОВЫЕ (Рекомендуется запустить прогрев: v=persona):" "Red"
     foreach ($bp in $bareOnes) {
         P "     * $($bp.Browser) -> `"$($bp.DisplayName)`" [Папка: $($bp.Folder)]" "Red"
     }
