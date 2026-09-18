@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
 =================================================================
    GMAILANTIFORK: ULTRA-DEEP FORENSIC & NETWORK AUDITOR v1.0
    Forensic Hardware, Hypervisor, BrowserLeaks & Cloud AI Diagnostic

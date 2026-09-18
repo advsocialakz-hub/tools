@@ -1,6 +1,6 @@
-﻿<#
+﻿﻿<#
 =================================================================
- ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v8.0
+ ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v8.5
  - Multi-Profile Batch Support (Single, Comma-Separated '1,2' or 'all')
  - Unique Distinct Personas Per Profile (Zero Cross-Contamination)
  - Specialized Target Presets:
@@ -13,7 +13,9 @@
    * stripe      - Global SaaS Billing & FinTech Checkout
  - 100% Guaranteed Zero Window Closing (Browser Remains Open)
  - Zero-Modifier Input: No Alt+F4, No Ctrl+W, No Stuck Modifier Keys
- - Native Triple-Click Input Reuse & Chrome Toolbar Back Button
+ - Dynamic Window & Screen Geometry Math (Zero Resolution Blindness)
+ - Human-Like Aiming: Bezier Curves, Micro-Jitter & Hesitation Drift
+ - Organic YouTube Surfing: Video Playback & Timeline Scrubber Seeking
  - Authorization Key Protected
 =================================================================
 #>
@@ -38,13 +40,13 @@ $ErrorActionPreference = 'SilentlyContinue'
 
 Add-Type -AssemblyName System.Windows.Forms
 
-# Регистрация C# модуля WinInputV7 (Zero-Modifier, плавная кинематика, тройной клик, сброс модификаторов)
-if (-not ([System.Management.Automation.PSTypeName]'WinInputV7').Type) {
+# Регистрация C# модуля WinInputV8 (Zero-Modifier, плавная кинематика, тройной клик, сброс модификаторов)
+if (-not ([System.Management.Automation.PSTypeName]'WinInputV8').Type) {
     Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
-public class WinInputV7 {
+public class WinInputV8 {
     [DllImport("user32.dll")] public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT lpPoint);
@@ -132,7 +134,7 @@ function Render-Bar($value, $max, $width=18) {
 }
 
 function Type-ExperiencedHuman([string]$targetText, [string]$typoText, [string]$correction) {
-    [WinInputV7]::ReleaseAllModifiers()
+    [WinInputV8]::ReleaseAllModifiers()
     $textToType = if ($typoText) { $typoText } else { $targetText }
     
     foreach ($ch in $textToType.ToCharArray()) {
@@ -161,7 +163,7 @@ function Type-ExperiencedHuman([string]$targetText, [string]$typoText, [string]$
     
     Start-Sleep -Milliseconds (Get-Random -Min 220 -Max 400)
     [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-    [WinInputV7]::ReleaseAllModifiers()
+    [WinInputV8]::ReleaseAllModifiers()
 }
 
 function Read-LockedBinarySafe($filePath) {
@@ -396,7 +398,7 @@ function Get-BrowserProfilesMetadata($userDataPath, $isDirect = $false) {
 
 Clear-Host
 P "=================================================================" "Cyan"
-P "  ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v8.0            " "Cyan"
+P "  ULTRA DIGITAL PERSONA & AI LORE WARM-UP ENGINE v8.5            " "Cyan"
 P "  Multi-Profile Automation & Targeted Service Presets            " "DarkCyan"
 P "=================================================================" "Cyan"
 P ""
@@ -616,14 +618,16 @@ function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
                 TypoText   = "google ai studio quickstar";
                 Correction = "tart python tutorial gemini api key";
                 TargetFull = "google ai studio quickstart python tutorial gemini api key";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
             $journey += @{
-                Title      = "📺 YouTube видео о возможностях Gemini 1.5 Pro";
-                TypoText   = "gemini 1.5 pro multimodal test youtub";
-                Correction = "tube demo walkthrough";
-                TargetFull = "gemini 1.5 pro multimodal test youtube demo walkthrough";
-                ClickFirst = $true
+                Title      = "📺 YouTube: Gemini 1.5 Pro walkthrough и перемотка ролика";
+                TypoText   = "gemini 1.5 pro test youtub";
+                Correction = "tube demo walkthrough review";
+                TargetFull = "gemini 1.5 pro test youtube demo walkthrough review";
+                ClickFirst = $true;
+                IsYouTube  = $true
             }
         }
         "antigravity" {
@@ -632,14 +636,16 @@ function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
                 TypoText   = "google antigravity agent sd";
                 Correction = "sdk documentation python github";
                 TargetFull = "google antigravity agent sdk documentation python github";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
             $journey += @{
-                Title      = "☁️ Google Cloud Shell и настройка окружения";
-                TypoText   = "how to enable google cloud shel";
-                Correction = "ll web ide vscode";
-                TargetFull = "how to enable google cloud shell web ide vscode";
-                ClickFirst = $true
+                Title      = "📺 YouTube: AI Agent Dev Environment Walkthrough";
+                TypoText   = "building ai agents python youtub";
+                Correction = "tube full course beginner tutorial";
+                TargetFull = "building ai agents python youtube full course beginner tutorial";
+                ClickFirst = $true;
+                IsYouTube  = $true
             }
         }
         "openai" {
@@ -648,14 +654,16 @@ function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
                 TypoText   = "openai api rate limits tie";
                 Correction = "ier 1 payment usage guide";
                 TargetFull = "openai api rate limits tier 1 payment usage guide";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
             $journey += @{
-                Title      = "⚙️ Сравнение GPT-4o и Claude 3.5 Sonnet";
-                TypoText   = "gpt-4o vs claude 3.5 sonnet benchmar";
-                Correction = "rks coding comparison";
-                TargetFull = "gpt-4o vs claude 3.5 sonnet benchmarks coding comparison";
-                ClickFirst = $true
+                Title      = "📺 YouTube: GPT-4o vs Claude 3.5 Sonnet comparison & demo";
+                TypoText   = "gpt-4o vs claude 3.5 sonnet youtub";
+                Correction = "tube coding benchmarks battle";
+                TargetFull = "gpt-4o vs claude 3.5 sonnet youtube coding benchmarks battle";
+                ClickFirst = $true;
+                IsYouTube  = $true
             }
         }
         "claude" {
@@ -664,14 +672,16 @@ function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
                 TypoText   = "anthropic claude console ap";
                 Correction = "pi billing top up guide";
                 TargetFull = "anthropic claude console api billing top up guide";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
             $journey += @{
-                Title      = "📰 Новости Кремниевой Долины и технологии в Калифорнии";
-                TypoText   = "silicon valley tech news thi";
-                Correction = "is week san francisco";
-                TargetFull = "silicon valley tech news this week san francisco";
-                ClickFirst = $true
+                Title      = "📺 YouTube: Claude Artifacts interactive app showcase";
+                TypoText   = "anthropic claude artifacts youtub";
+                Correction = "tube building full stack apps demo";
+                TargetFull = "anthropic claude artifacts youtube building full stack apps demo";
+                ClickFirst = $true;
+                IsYouTube  = $true
             }
         }
         "amazon" {
@@ -680,14 +690,16 @@ function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
                 TypoText   = "best mechanical keyboar";
                 Correction = "rd for mac amazon prime deals";
                 TargetFull = "best mechanical keyboard for mac amazon prime deals";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
             $journey += @{
-                Title      = "☁️ Amazon Web Services бесплатный уровень (Free Tier)";
-                TypoText   = "aws free tier limits ec2 t3.micr";
-                Correction = "cro setup guide";
-                TargetFull = "aws free tier limits ec2 t3.micro setup guide";
-                ClickFirst = $true
+                Title      = "📺 YouTube: Mechanical keyboard unboxing sound test";
+                TypoText   = "custom mechanical keyboard youtub";
+                Correction = "tube unboxing review sound test";
+                TargetFull = "custom mechanical keyboard youtube unboxing review sound test";
+                ClickFirst = $true;
+                IsYouTube  = $true
             }
         }
         "stripe" {
@@ -696,37 +708,50 @@ function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
                 TypoText   = "stripe checkout customer porta";
                 Correction = "tal recurring billing test";
                 TargetFull = "stripe checkout customer portal recurring billing test";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
             $journey += @{
-                Title      = "🏦 Проверка 3D Secure и международных транзакций";
-                TypoText   = "how 3d secure works internatinal card";
-                Correction = "onal cards verification";
-                TargetFull = "how 3d secure works international cards verification";
-                ClickFirst = $true
+                Title      = "📺 YouTube: Stripe checkout integration tutorial";
+                TypoText   = "stripe payment checkout youtub";
+                Correction = "tube webhook integration full guide";
+                TargetFull = "stripe payment checkout youtube webhook integration full guide";
+                ClickFirst = $true;
+                IsYouTube  = $true
             }
         }
         default { # "all" - Сбалансированный универсальный пакет
+            $journey += @{
+                Title      = "📺 YouTube: Фоновая музыка Lo-Fi и перемотка ролика";
+                TypoText   = "lofi hip hop radio live youtub";
+                Correction = "tube relaxing beats study stream";
+                TargetFull = "lofi hip hop radio live youtube relaxing beats study stream";
+                ClickFirst = $true;
+                IsYouTube  = $true
+            }
             $journey += @{
                 Title      = "🍳 Быстрый домашний ужин за 20 минут (опечатка 'chiken' -> 'pasta')";
                 TypoText   = "easy 20 min garlic chiken pat";
                 Correction = "cken pasta recipe dinner";
                 TargetFull = "easy 20 min garlic chicken pasta recipe dinner";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
             $journey += @{
                 Title      = "🔧 Бытовой DIY ремонт сантехники (пошаговая инструкция)";
                 TypoText   = "how to replace runing tolet flapp";
                 Correction = "running toilet flapper valve step by step";
                 TargetFull = "how to replace running toilet flapper valve step by step";
-                ClickFirst = $false
+                ClickFirst = $false;
+                IsYouTube  = $false
             }
             $journey += @{
                 Title      = "🎯 Скоростной домашний интернет и отзывы провайдеров в $city";
                 TypoText   = "best high speed fiber internet pla";
                 Correction = "ans in $city reviews";
                 TargetFull = "best high speed fiber internet plans in $city reviews";
-                ClickFirst = $true
+                ClickFirst = $true;
+                IsYouTube  = $false
             }
         }
     }
@@ -762,11 +787,17 @@ foreach ($chosen in $chosenProfiles) {
     Start-Sleep -Seconds 4
 
     if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {
-        [WinInputV7]::ShowWindow($proc.MainWindowHandle, 3) | Out-Null
-        [WinInputV7]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
+        [WinInputV8]::ShowWindow($proc.MainWindowHandle, 3) | Out-Null
+        [WinInputV8]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
     }
 
-    [WinInputV7]::ReleaseAllModifiers()
+    [WinInputV8]::ReleaseAllModifiers()
+
+    # Вычисление физических координат окна браузера (адаптивная разметка под любое разрешение)
+    $boundsStr = [WinInputV8]::GetWindowBoundsStr($proc.MainWindowHandle)
+    $bParts = $boundsStr -split ','
+    $winX = [int]$bParts[0]; $winY = [int]$bParts[1]; $winW = [int]$bParts[2]; $winH = [int]$bParts[3]
+    P "  -> Окно браузера:    X=$winX, Y=$winY, W=$winW, H=$winH (Адаптивная разметка активна)" "DarkGray"
 
     # Выполнение поисковых сценариев
     P "[3/4] Выполнение сценария органического поиска и серфинга..." "Yellow"
@@ -777,14 +808,16 @@ foreach ($chosen in $chosenProfiles) {
         P "  [$stepIdx/$($pLore.Journey.Count)] $($task.Title)" "Cyan"
 
         if ($isFirstQuery) {
-            $inputX = Get-Random -Min 510 -Max 650
-            $inputY = Get-Random -Min 348 -Max 380
-            [WinInputV7]::Click($inputX, $inputY)
+            # Точный расчёт центрального поля ввода Google на главной странице
+            $inputX = $winX + [int]($winW * 0.50) + (Get-Random -Min -35 -Max 35)
+            $inputY = $winY + [int]($winH * 0.385) + (Get-Random -Min -8 -Max 8)
+            [WinInputV8]::HumanAimAndClick($inputX, $inputY, $false)
             $isFirstQuery = $false
         } else {
-            $topInputX = Get-Random -Min 280 -Max 420
-            $topInputY = Get-Random -Min 128 -Max 142
-            [WinInputV7]::TripleClick($topInputX, $topInputY)
+            # Верхняя поисковая строка на странице поисковой выдачи
+            $topInputX = $winX + [int][Math]::Min(380, [Math]::Max(240, $winW * 0.22)) + (Get-Random -Min -15 -Max 15)
+            $topInputY = $winY + [int][Math]::Min(145, [Math]::Max(125, $winH * 0.14)) + (Get-Random -Min -4 -Max 4)
+            [WinInputV8]::TripleClick($topInputX, $topInputY)
             Start-Sleep -Milliseconds 150
             [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}")
             Start-Sleep -Milliseconds 120
@@ -794,36 +827,79 @@ foreach ($chosen in $chosenProfiles) {
         Type-ExperiencedHuman $task.TargetFull $task.TypoText $task.Correction
         Start-Sleep -Seconds 4
 
-        # Плавное чтение результатов выдачи
+        # Плавное чтение результатов выдачи с физическим микро-дрожанием
         for ($s = 0; $s -lt 3; $s++) {
-            [WinInputV7]::ScrollSmooth(-180, 5)
-            $curX = Get-Random -Min 380 -Max 700
-            $curY = Get-Random -Min 280 -Max 460
-            [WinInputV7]::MoveSmooth($curX, $curY, 400)
+            [WinInputV8]::ScrollSmooth(-180, 5)
+            $curX = $winX + [int]($winW * 0.40) + (Get-Random -Min -100 -Max 150)
+            $curY = $winY + [int]($winH * 0.45) + (Get-Random -Min -60 -Max 80)
+            [WinInputV8]::MoveSmooth($curX, $curY, 380)
             Start-Sleep -Milliseconds (Get-Random -Min 400 -Max 750)
         }
 
         # Переход по результату поиска и чтение страницы
         if ($task.ClickFirst) {
-            $linkX = Get-Random -Min 370 -Max 560
-            $linkY = Get-Random -Min 325 -Max 390
-            P "      [+] Чтение открывшейся страницы сайта..." "Magenta"
-            [WinInputV7]::Click($linkX, $linkY)
-            Start-Sleep -Seconds 4
+            $linkX = $winX + [int][Math]::Min(450, [Math]::Max(240, $winW * 0.24)) + (Get-Random -Min -15 -Max 25)
+            $linkY = $winY + [int][Math]::Min(315, [Math]::Max(270, $winH * 0.30)) + (Get-Random -Min -6 -Max 6)
 
-            # Просмотр контента
-            [WinInputV7]::ScrollSmooth(-220, 5)
-            Start-Sleep -Milliseconds 700
-            [WinInputV7]::ScrollSmooth(-160, 5)
-            Start-Sleep -Seconds 2
+            if ($task.IsYouTube) {
+                P "      [▶] Вход в YouTube видео и запуск плеера..." "Magenta"
+                [WinInputV8]::HumanAimAndClick($linkX, $linkY, $true)
+                Start-Sleep -Seconds 5
 
-            # Возврат к Google Поиску через клик по нативной кнопке 'Назад' (X=18, Y=82)
-            P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
-            [WinInputV7]::Click(18, 82)
-            Start-Sleep -Seconds 3
-            [WinInputV7]::ReleaseAllModifiers()
+                # Активация контролов плеера движением мыши
+                $playerX = $winX + [int]($winW * 0.36)
+                $playerY = $winY + [int]($winH * 0.36)
+                [WinInputV8]::MoveSmooth($playerX, $playerY, 350)
+                Start-Sleep -Milliseconds 600
+
+                # Координаты таймлайна (полоска длительности в нижней части плеера)
+                $timelineY  = $winY + [int]($winH * 0.58) + (Get-Random -Min -2 -Max 2)
+                $scrubStart = $winX + [int]($winW * 0.12)
+                $scrubEnd   = $winX + [int]($winW * 0.62)
+
+                # Перемотка 1: клик на ~28% таймлайна
+                $seek1X = $scrubStart + [int](($scrubEnd - $scrubStart) * 0.28) + (Get-Random -Min -4 -Max 4)
+                P "      [⏩] Перемотка ролика по таймлайну (Seek ~28%)..." "DarkYellow"
+                [WinInputV8]::HumanAimAndClick($seek1X, $timelineY, $false)
+                Start-Sleep -Seconds (Get-Random -Min 4 -Max 7)
+
+                # Перемотка 2: клик дальше на ~62% таймлайна
+                $seek2X = $scrubStart + [int](($scrubEnd - $scrubStart) * 0.62) + (Get-Random -Min -4 -Max 4)
+                P "      [⏩] Перемотка ролика вперёд по таймлайну (Seek ~62%)..." "DarkYellow"
+                [WinInputV8]::HumanAimAndClick($seek2X, $timelineY, $false)
+                Start-Sleep -Seconds (Get-Random -Min 4 -Max 6)
+
+                # Скролл вниз к комментариям
+                P "      [↓] Плавное чтение комментариев и рекомендаций..." "Gray"
+                [WinInputV8]::ScrollSmooth(-220, 6)
+                Start-Sleep -Seconds 3
+
+                # Плавный возврат к поиску через нативную кнопку назад
+                P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
+                $backX = $winX + 18; $backY = $winY + 82
+                [WinInputV8]::Click($backX, $backY)
+                Start-Sleep -Seconds 3
+                [WinInputV8]::ReleaseAllModifiers()
+            } else {
+                P "      [+] Чтение страницы сайта (Human-Like с овершутом)..." "Magenta"
+                [WinInputV8]::HumanAimAndClick($linkX, $linkY, $true)
+                Start-Sleep -Seconds 4
+
+                # Просмотр контента
+                [WinInputV8]::ScrollSmooth(-220, 5)
+                Start-Sleep -Milliseconds 700
+                [WinInputV8]::ScrollSmooth(-160, 5)
+                Start-Sleep -Seconds 2
+
+                # Возврат к Google Поиску через клик по нативной кнопке 'Назад'
+                P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
+                $backX = $winX + 18; $backY = $winY + 82
+                [WinInputV8]::Click($backX, $backY)
+                Start-Sleep -Seconds 3
+                [WinInputV8]::ReleaseAllModifiers()
+            }
         } else {
-            [WinInputV7]::ScrollSmooth(250, 5)
+            [WinInputV8]::ScrollSmooth(250, 5)
             Start-Sleep -Milliseconds 400
         }
 
@@ -834,11 +910,13 @@ foreach ($chosen in $chosenProfiles) {
     P ""
     P "[4/4] Анализ накопленной базы куков и переход в настройки браузера..." "Yellow"
 
-    [WinInputV7]::TripleClick(350, 82)
+    $urlBarX = $winX + [int]($winW * 0.30)
+    $urlBarY = $winY + 82
+    [WinInputV8]::TripleClick($urlBarX, $urlBarY)
     Start-Sleep -Milliseconds 150
     [System.Windows.Forms.SendKeys]::SendWait("chrome://settings/content/all{ENTER}")
     Start-Sleep -Seconds 2
-    [WinInputV7]::ReleaseAllModifiers()
+    [WinInputV8]::ReleaseAllModifiers()
 
     # Анализ куков текущего профиля на лету
     $profPath = Join-Path $chosen.UserData $chosen.Folder

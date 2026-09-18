@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
 =================================================================
  GLOBAL MULTI-BROWSER COOKIE, HISTORY & TRUST AUDITOR v6.0
  - Interactive Profile Selection: Pick [1-N], Comma List or All
