@@ -924,6 +924,32 @@ function Get-AllAvailableProfiles {
 
 }
 
+function Navigate-BrowserBack($winX, $winY) {
+    P "      [⤾] Человеческий возврат к поиску через кнопку 'Назад'..." "Gray"
+    $dpiScale = 1.0
+    try {
+        $graphics = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
+        $dpiScale = $graphics.DpiX / 96.0
+    } catch {}
+
+    $actualX = [Math]::Max(0, $winX)
+    $actualY = [Math]::Max(0, $winY)
+
+    # Точные координаты кнопки 'Назад' с учетом DPI масштабирования (2560x1440 125%/150%)
+    $backBtnX = $actualX + [int](24 * $dpiScale) + (Get-Random -Min -2 -Max 2)
+    $backBtnY = $actualY + [int](52 * $dpiScale) + (Get-Random -Min -2 -Max 2)
+
+    [WinInputV8]::MoveSmooth($backBtnX, $backBtnY, (Get-Random -Min 260 -Max 380))
+    Start-Sleep -Milliseconds (Get-Random -Min 100 -Max 180)
+    [WinInputV8]::Click($backBtnX, $backBtnY)
+    Start-Sleep -Milliseconds 450
+
+    # Бронебойная страховка возврата: стандартный хоткей браузера Alt+Left
+    [System.Windows.Forms.SendKeys]::SendWait("%{LEFT}")
+    Start-Sleep -Seconds 3
+    [WinInputV8]::ReleaseAllModifiers()
+}
+
 function Get-PageDomElements($port = 9222) {
     try {
         $tabs = Invoke-RestMethod -Uri "http://127.0.0.1:$port/json" -TimeoutSec 2 -ErrorAction Stop
@@ -936,7 +962,59 @@ function Get-PageDomElements($port = 9222) {
         $ws.ConnectAsync($uri, $ct).Wait(2000) | Out-Null
         if ($ws.State -ne [System.Net.WebSockets.WebSocketState]::Open) { return $null }
 
-        $evalExpr = "(() => { const items = Array.from(document.querySelectorAll('h3, a h3, [role=heading], .LC20lb, a[href^=http]')).map(el => { const r = el.getBoundingClientRect(); return { text: el.innerText.trim(), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; }).filter(i => i.w > 35 && i.h > 10 && i.y > 150 && i.y < 900 && i.text.length > 5); return JSON.stringify(items); })()"
+        $evalExpr = @"
+(() => {
+    // 1. Поиск блока Google AI Overview (SGE)
+    const aiSelectors = [
+        '[data-attrid="wa:/description"]',
+        'div[jsname="N5A75d"]',
+        'div.m77AKe',
+        'div.q0qwxb',
+        '[aria-label*="Overview"]',
+        '[aria-label*="Обзор"]'
+    ];
+    let aiBlock = null;
+    for (const sel of aiSelectors) {
+        const el = document.querySelector(sel);
+        if (el) { aiBlock = el; break; }
+    }
+
+    // 2. Поиск поля ввода уточняющего вопроса к нейросети Google
+    const aiInputSelectors = [
+        'textarea[placeholder*="Ask a follow up"]',
+        'textarea[placeholder*="Задайте уточняющий вопрос"]',
+        'input[placeholder*="Ask a follow up"]',
+        'input[placeholder*="Задайте уточняющий вопрос"]',
+        '[aria-label*="Ask a follow up"]',
+        '[aria-label*="Задайте уточняющий вопрос"]',
+        'div[role="combobox"][aria-label*="Ask"]',
+        'div[role="combobox"]'
+    ];
+    let aiInputBox = null;
+    for (const sel of aiInputSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 50 && r.height > 15) {
+                aiInputBox = { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+                break;
+            }
+        }
+    }
+
+    // 3. Органические заголовки и ссылки
+    const headings = Array.from(document.querySelectorAll('h3, a h3, [role=heading], .LC20lb, a[href^=http]')).map(el => {
+        const r = el.getBoundingClientRect();
+        return { text: el.innerText.trim(), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+    }).filter(i => i.w > 35 && i.h > 10 && i.y > 150 && i.y < 1200 && i.text.length > 5);
+
+    return JSON.stringify({
+        hasAiOverview: !!aiBlock,
+        aiInput: aiInputBox,
+        items: headings
+    });
+})()
+"@
 
         $payload = @{
             id = 1
@@ -1783,8 +1861,29 @@ function Run-PersonaWarmerModule($targetProfiles = $null, $targetPreset = "all")
 
             if ($task.ClickFirst) {
                 # 1. Поиск элементов через DOM-дерево страницы (CDP / Layout)
-                $domElements = Get-PageDomElements 9222
+                $domData = Get-PageDomElements 9222
+                $domElements = if ($domData -and $domData.items) { $domData.items } elseif ($domData -and $domData.Count) { $domData } else { @() }
                 $targetElement = if ($domElements -and $domElements.Count -gt 0) { $domElements[0] } else { $null }
+
+                # Взаимодействие с Google AI Overview при его обнаружении
+                if ($domData -and $domData.hasAiOverview) {
+                    P "      [🤖 Google AI Overview] В выдаче активен блок нейросети Google!" "Yellow"
+                    if ($domData.aiInput -and (Get-Random -Min 0 -Max 100) -lt 65) {
+                        $aiIn = $domData.aiInput
+                        $aiClickX = $winX + $aiIn.x + [int]($aiIn.w * 0.3)
+                        $aiClickY = $winY + 128 + $aiIn.y + [int]($aiIn.h * 0.5)
+                        P "      [💬 AI Prompt] Наведение на строку уточняющего вопроса к нейросети Google..." "Magenta"
+                        [WinInputV8]::HumanAimAndClick($aiClickX, $aiClickY, $false)
+                        Start-Sleep -Milliseconds 450
+                        $aiQueries = @("tell me more", "can you give examples?", "what are key pros and cons?", "summarize briefly", "how does this work?")
+                        $aiQ = $aiQueries[(Get-Random -Min 0 -Max $aiQueries.Count)]
+                        P "      [⌨️ AI Chat] Вопрос к Google AI: '$aiQ'" "Cyan"
+                        Type-ExperiencedHuman $aiQ $null $null
+                        Start-Sleep -Seconds 4
+                        [WinInputV8]::ScrollSmooth(-200, 5)
+                        Start-Sleep -Seconds 2
+                    }
+                }
 
                 $linkX = 0
                 $linkY = 0
@@ -1864,13 +1963,7 @@ function Run-PersonaWarmerModule($targetProfiles = $null, $targetPreset = "all")
 
                     P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
 
-                    $backX = $winX + 18; $backY = $winY + 82
-
-                    [WinInputV8]::Click($backX, $backY)
-
-                    Start-Sleep -Seconds 3
-
-                    [WinInputV8]::ReleaseAllModifiers()
+                    Navigate-BrowserBack $winX $winY
 
                 } else {
 
@@ -1890,13 +1983,7 @@ function Run-PersonaWarmerModule($targetProfiles = $null, $targetPreset = "all")
 
                     P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
 
-                    $backX = $winX + 18; $backY = $winY + 82
-
-                    [WinInputV8]::Click($backX, $backY)
-
-                    Start-Sleep -Seconds 3
-
-                    [WinInputV8]::ReleaseAllModifiers()
+                    Navigate-BrowserBack $winX $winY
 
                 }
 
@@ -3336,68 +3423,122 @@ P ""
 
 # Функция генерации уникальной персоны и поисковых путей под целевой пресет
 
-function Get-PageDomElements($port = 9222) {
-
+function Navigate-BrowserBack($winX, $winY) {
+    P "      [⤾] Человеческий возврат к поиску через кнопку 'Назад'..." "Gray"
+    $dpiScale = 1.0
     try {
+        $graphics = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
+        $dpiScale = $graphics.DpiX / 96.0
+    } catch {}
 
+    $actualX = [Math]::Max(0, $winX)
+    $actualY = [Math]::Max(0, $winY)
+
+    # Точные координаты кнопки 'Назад' с учетом DPI масштабирования (2560x1440 125%/150%)
+    $backBtnX = $actualX + [int](24 * $dpiScale) + (Get-Random -Min -2 -Max 2)
+    $backBtnY = $actualY + [int](52 * $dpiScale) + (Get-Random -Min -2 -Max 2)
+
+    [WinInputV8]::MoveSmooth($backBtnX, $backBtnY, (Get-Random -Min 260 -Max 380))
+    Start-Sleep -Milliseconds (Get-Random -Min 100 -Max 180)
+    [WinInputV8]::Click($backBtnX, $backBtnY)
+    Start-Sleep -Milliseconds 450
+
+    # Бронебойная страховка возврата: стандартный хоткей браузера Alt+Left
+    [System.Windows.Forms.SendKeys]::SendWait("%{LEFT}")
+    Start-Sleep -Seconds 3
+    [WinInputV8]::ReleaseAllModifiers()
+}
+
+function Get-PageDomElements($port = 9222) {
+    try {
         $tabs = Invoke-RestMethod -Uri "http://127.0.0.1:$port/json" -TimeoutSec 2 -ErrorAction Stop
-
         $activeTab = $tabs | Where-Object { $_.type -eq "page" -and $_.url -notmatch '^(chrome|edge|opera):' } | Select-Object -First 1
-
         if (-not $activeTab -or -not $activeTab.webSocketDebuggerUrl) { return $null }
 
         $ws = New-Object System.Net.WebSockets.ClientWebSocket
-
         $ct = [System.Threading.CancellationToken]::None
-
         $uri = New-Object System.Uri($activeTab.webSocketDebuggerUrl)
-
         $ws.ConnectAsync($uri, $ct).Wait(2000) | Out-Null
-
         if ($ws.State -ne [System.Net.WebSockets.WebSocketState]::Open) { return $null }
 
-        $evalExpr = "(() => { const items = Array.from(document.querySelectorAll('h3, a h3, [role=heading], .LC20lb, a[href^=http]')).map(el => { const r = el.getBoundingClientRect(); return { text: el.innerText.trim(), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; }).filter(i => i.w > 35 && i.h > 10 && i.y > 150 && i.y < 900 && i.text.length > 5); return JSON.stringify(items); })()"
+        $evalExpr = @"
+(() => {
+    // 1. Поиск блока Google AI Overview (SGE)
+    const aiSelectors = [
+        '[data-attrid="wa:/description"]',
+        'div[jsname="N5A75d"]',
+        'div.m77AKe',
+        'div.q0qwxb',
+        '[aria-label*="Overview"]',
+        '[aria-label*="Обзор"]'
+    ];
+    let aiBlock = null;
+    for (const sel of aiSelectors) {
+        const el = document.querySelector(sel);
+        if (el) { aiBlock = el; break; }
+    }
+
+    // 2. Поиск поля ввода уточняющего вопроса к нейросети Google
+    const aiInputSelectors = [
+        'textarea[placeholder*="Ask a follow up"]',
+        'textarea[placeholder*="Задайте уточняющий вопрос"]',
+        'input[placeholder*="Ask a follow up"]',
+        'input[placeholder*="Задайте уточняющий вопрос"]',
+        '[aria-label*="Ask a follow up"]',
+        '[aria-label*="Задайте уточняющий вопрос"]',
+        'div[role="combobox"][aria-label*="Ask"]',
+        'div[role="combobox"]'
+    ];
+    let aiInputBox = null;
+    for (const sel of aiInputSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 50 && r.height > 15) {
+                aiInputBox = { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+                break;
+            }
+        }
+    }
+
+    // 3. Органические заголовки и ссылки
+    const headings = Array.from(document.querySelectorAll('h3, a h3, [role=heading], .LC20lb, a[href^=http]')).map(el => {
+        const r = el.getBoundingClientRect();
+        return { text: el.innerText.trim(), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+    }).filter(i => i.w > 35 && i.h > 10 && i.y > 150 && i.y < 1200 && i.text.length > 5);
+
+    return JSON.stringify({
+        hasAiOverview: !!aiBlock,
+        aiInput: aiInputBox,
+        items: headings
+    });
+})()
+"@
 
         $payload = @{
-
             id = 1
-
             method = "Runtime.evaluate"
-
             params = @{ expression = $evalExpr; returnByValue = $true }
-
         } | ConvertTo-Json -Compress
 
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
-
         $segment = New-Object System.ArraySegment[byte] -ArgumentList @($bytes, 0, $bytes.Length)
-
         $ws.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $ct).Wait(1500) | Out-Null
 
         $recvBuffer = New-Object byte[] 65536
-
         $recvSegment = New-Object System.ArraySegment[byte] -ArgumentList @($recvBuffer, 0, $recvBuffer.Length)
-
         $result = $ws.ReceiveAsync($recvSegment, $ct)
-
         $result.Wait(2000) | Out-Null
 
         $rawJson = [System.Text.Encoding]::UTF8.GetString($recvBuffer, 0, $result.Result.Count)
-
         $ws.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, "Done", $ct) | Out-Null
 
         $respObj = $rawJson | ConvertFrom-Json
-
         if ($respObj.result -and $respObj.result.result -and $respObj.result.result.value) {
-
             return ($respObj.result.result.value | ConvertFrom-Json)
-
         }
-
     } catch {}
-
     return $null
-
 }
 
 function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
@@ -3874,9 +4015,29 @@ foreach ($chosen in $chosenProfiles) {
 
             # 1. Поиск элементов через DOM-дерево страницы (CDP / Layout)
 
-            $domElements = Get-PageDomElements 9222
+            $domData = Get-PageDomElements 9222
+                $domElements = if ($domData -and $domData.items) { $domData.items } elseif ($domData -and $domData.Count) { $domData } else { @() }
+                $targetElement = if ($domElements -and $domElements.Count -gt 0) { $domElements[0] } else { $null }
 
-            $targetElement = if ($domElements -and $domElements.Count -gt 0) { $domElements[0] } else { $null }
+                # Взаимодействие с Google AI Overview при его обнаружении
+                if ($domData -and $domData.hasAiOverview) {
+                    P "      [🤖 Google AI Overview] В выдаче активен блок нейросети Google!" "Yellow"
+                    if ($domData.aiInput -and (Get-Random -Min 0 -Max 100) -lt 65) {
+                        $aiIn = $domData.aiInput
+                        $aiClickX = $winX + $aiIn.x + [int]($aiIn.w * 0.3)
+                        $aiClickY = $winY + 128 + $aiIn.y + [int]($aiIn.h * 0.5)
+                        P "      [💬 AI Prompt] Наведение на строку уточняющего вопроса к нейросети Google..." "Magenta"
+                        [WinInputV8]::HumanAimAndClick($aiClickX, $aiClickY, $false)
+                        Start-Sleep -Milliseconds 450
+                        $aiQueries = @("tell me more", "can you give examples?", "what are key pros and cons?", "summarize briefly", "how does this work?")
+                        $aiQ = $aiQueries[(Get-Random -Min 0 -Max $aiQueries.Count)]
+                        P "      [⌨️ AI Chat] Вопрос к Google AI: '$aiQ'" "Cyan"
+                        Type-ExperiencedHuman $aiQ $null $null
+                        Start-Sleep -Seconds 4
+                        [WinInputV8]::ScrollSmooth(-200, 5)
+                        Start-Sleep -Seconds 2
+                    }
+                }
 
             $linkX = 0
 
@@ -3990,13 +4151,7 @@ foreach ($chosen in $chosenProfiles) {
 
                 P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
 
-                $backX = $winX + 18; $backY = $winY + 82
-
-                [WinInputV8]::Click($backX, $backY)
-
-                Start-Sleep -Seconds 3
-
-                [WinInputV8]::ReleaseAllModifiers()
+                Navigate-BrowserBack $winX $winY
 
             } else {
 
@@ -4020,13 +4175,7 @@ foreach ($chosen in $chosenProfiles) {
 
                 P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
 
-                $backX = $winX + 18; $backY = $winY + 82
-
-                [WinInputV8]::Click($backX, $backY)
-
-                Start-Sleep -Seconds 3
-
-                [WinInputV8]::ReleaseAllModifiers()
+                Navigate-BrowserBack $winX $winY
 
             }
 
@@ -8097,20 +8246,20 @@ Write-Host ""`,
 #>
 
 param(
-    [Parameter(Mandatory=\\\\$false)] [string]\\\\$Key = "akz2026",
-    [Parameter(Mandatory=\\\\$false)] [string]\\\\$Browser = "",
-    [Parameter(Mandatory=\\\\$false)] [string]\\\\$Profile = ""
+    [Parameter(Mandatory=\\\\\\\\$false)] [string]\\\\\\\\$Key = "akz2026",
+    [Parameter(Mandatory=\\\\\\\\$false)] [string]\\\\\\\\$Browser = "",
+    [Parameter(Mandatory=\\\\\\\\$false)] [string]\\\\\\\\$Profile = ""
 )
 
 # 1. Лицензионная авторизация
-\\\\$AUTHORIZED_KEY = "akz2026"
-if (\\\\$Key -ne \\\\$AUTHORIZED_KEY) {
+\\\\\\\\$AUTHORIZED_KEY = "akz2026"
+if (\\\\\\\\$Key -ne \\\\\\\\$AUTHORIZED_KEY) {
     Write-Host "[-] Access Denied: Unauthorized script execution. Invalid Key." -ForegroundColor Red
     return
 }
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-\\\\$ErrorActionPreference = 'SilentlyContinue'
+\\\\\\\\$ErrorActionPreference = 'SilentlyContinue'
 
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -8168,33 +8317,33 @@ public class WinInputV6 {
 "@
 }
 
-\\\\$sb = [System.Text.StringBuilder]::new()
-function P(\\\\$text, \\\\$color="White") {
-    Write-Host \\\\$text -ForegroundColor \\\\$color
-    [void]\\\\$sb.AppendLine(\\\\$text)
+\\\\\\\\$sb = [System.Text.StringBuilder]::new()
+function P(\\\\\\\\$text, \\\\\\\\$color="White") {
+    Write-Host \\\\\\\\$text -ForegroundColor \\\\\\\\$color
+    [void]\\\\\\\\$sb.AppendLine(\\\\\\\\$text)
 }
 
-function Type-ExperiencedHuman([string]\\\\$targetText, [string]\\\\$typoText, [string]\\\\$correction) {
-    \\\\$textToType = if (\\\\$typoText) { \\\\$typoText } else { \\\\$targetText }
-    foreach (\\\\$ch in \\\\$textToType.ToCharArray()) {
-        \\\\$c = [string]\\\\$ch
-        if (\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) { \\\\$c = "{\\\\$c}" }
-        [System.Windows.Forms.SendKeys]::SendWait(\\\\$c)
+function Type-ExperiencedHuman([string]\\\\\\\\$targetText, [string]\\\\\\\\$typoText, [string]\\\\\\\\$correction) {
+    \\\\\\\\$textToType = if (\\\\\\\\$typoText) { \\\\\\\\$typoText } else { \\\\\\\\$targetText }
+    foreach (\\\\\\\\$ch in \\\\\\\\$textToType.ToCharArray()) {
+        \\\\\\\\$c = [string]\\\\\\\\$ch
+        if (\\\\\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) { \\\\\\\\$c = "{\\\\\\\\$c}" }
+        [System.Windows.Forms.SendKeys]::SendWait(\\\\\\\\$c)
         Start-Sleep -Milliseconds (Get-Random -Min 35 -Max 80)
         if ((Get-Random -Min 1 -Max 15) -eq 1) { Start-Sleep -Milliseconds (Get-Random -Min 130 -Max 240) }
     }
-    if (\\\\$typoText -and \\\\$correction) {
+    if (\\\\\\\\$typoText -and \\\\\\\\$correction) {
         Start-Sleep -Milliseconds (Get-Random -Min 180 -Max 320)
-        \\\\$backspacesCount = (Get-Random -Min 2 -Max 4)
-        for (\\\\$b = 0; \\\\$b -lt \\\\$backspacesCount; \\\\$b++) {
+        \\\\\\\\$backspacesCount = (Get-Random -Min 2 -Max 4)
+        for (\\\\\\\\$b = 0; \\\\\\\\$b -lt \\\\\\\\$backspacesCount; \\\\\\\\$b++) {
             [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}")
             Start-Sleep -Milliseconds (Get-Random -Min 60 -Max 100)
         }
         Start-Sleep -Milliseconds (Get-Random -Min 90 -Max 160)
-        foreach (\\\\$ch in \\\\$correction.ToCharArray()) {
-            \\\\$c = [string]\\\\$ch
-            if (\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) { \\\\$c = "{\\\\$c}" }
-            [System.Windows.Forms.SendKeys]::SendWait(\\\\$c)
+        foreach (\\\\\\\\$ch in \\\\\\\\$correction.ToCharArray()) {
+            \\\\\\\\$c = [string]\\\\\\\\$ch
+            if (\\\\\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) { \\\\\\\\$c = "{\\\\\\\\$c}" }
+            [System.Windows.Forms.SendKeys]::SendWait(\\\\\\\\$c)
             Start-Sleep -Milliseconds (Get-Random -Min 35 -Max 70)
         }
     }
@@ -8202,41 +8351,41 @@ function Type-ExperiencedHuman([string]\\\\$targetText, [string]\\\\$typoText, [
     [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
 }
 
-function Get-BrowserProfilesMetadata(\\\\$userDataPath) {
-    \\\\$meta = @{}
-    \\\\$localState = Join-Path \\\\$userDataPath "Local State"
-    if (Test-Path \\\\$localState) {
+function Get-BrowserProfilesMetadata(\\\\\\\\$userDataPath) {
+    \\\\\\\\$meta = @{}
+    \\\\\\\\$localState = Join-Path \\\\\\\\$userDataPath "Local State"
+    if (Test-Path \\\\\\\\$localState) {
         try {
-            \\\\$raw = [System.IO.File]::ReadAllText(\\\\$localState)
-            \\\\$json = \\\\$raw | ConvertFrom-Json
-            if (\\\\$json.profile -and \\\\$json.profile.info_cache) {
-                foreach (\\\\$prop in \\\\$json.profile.info_cache.PSObject.Properties) {
-                    \\\\$f = \\\\$prop.Name
-                    \\\\$v = \\\\$prop.Value
-                    \\\\$name = if (\\\\$v.name) { \\\\$v.name } else { \\\\$f }
-                    \\\\$email = if (\\\\$v.user_name) { \\\\$v.user_name } else { "" }
-                    \\\\$meta[\\\\$f] = [PSCustomObject]@{
-                        Folder      = \\\\$f
-                        DisplayName = \\\\$name
-                        Email       = \\\\$email
+            \\\\\\\\$raw = [System.IO.File]::ReadAllText(\\\\\\\\$localState)
+            \\\\\\\\$json = \\\\\\\\$raw | ConvertFrom-Json
+            if (\\\\\\\\$json.profile -and \\\\\\\\$json.profile.info_cache) {
+                foreach (\\\\\\\\$prop in \\\\\\\\$json.profile.info_cache.PSObject.Properties) {
+                    \\\\\\\\$f = \\\\\\\\$prop.Name
+                    \\\\\\\\$v = \\\\\\\\$prop.Value
+                    \\\\\\\\$name = if (\\\\\\\\$v.name) { \\\\\\\\$v.name } else { \\\\\\\\$f }
+                    \\\\\\\\$email = if (\\\\\\\\$v.user_name) { \\\\\\\\$v.user_name } else { "" }
+                    \\\\\\\\$meta[\\\\\\\\$f] = [PSCustomObject]@{
+                        Folder      = \\\\\\\\$f
+                        DisplayName = \\\\\\\\$name
+                        Email       = \\\\\\\\$email
                     }
                 }
             }
         } catch {}
     }
-    if (Test-Path \\\\$userDataPath) {
-        \\\\$dirs = Get-ChildItem \\\\$userDataPath -Directory -ErrorAction SilentlyContinue | Where-Object { \\\\$_.Name -match '^(Default|Profile \\\\\\\\d+)\\\\$' }
-        foreach (\\\\$d in \\\\$dirs) {
-            if (-not \\\\$meta.ContainsKey(\\\\$d.Name)) {
-                \\\\$meta[\\\\$d.Name] = [PSCustomObject]@{
-                    Folder      = \\\\$d.Name
-                    DisplayName = \\\\$d.Name
+    if (Test-Path \\\\\\\\$userDataPath) {
+        \\\\\\\\$dirs = Get-ChildItem \\\\\\\\$userDataPath -Directory -ErrorAction SilentlyContinue | Where-Object { \\\\\\\\$_.Name -match '^(Default|Profile \\\\\\\\\\\\\\\\d+)\\\\\\\\$' }
+        foreach (\\\\\\\\$d in \\\\\\\\$dirs) {
+            if (-not \\\\\\\\$meta.ContainsKey(\\\\\\\\$d.Name)) {
+                \\\\\\\\$meta[\\\\\\\\$d.Name] = [PSCustomObject]@{
+                    Folder      = \\\\\\\\$d.Name
+                    DisplayName = \\\\\\\\$d.Name
                     Email       = ""
                 }
             }
         }
     }
-    return \\\\$meta
+    return \\\\\\\\$meta
 }
 
 Clear-Host
@@ -8247,198 +8396,198 @@ P "=================================================================" "Cyan"
 P ""
 
 # 2. Определение пользователя
-\\\\$activeUser = \\\\$env:USERNAME
-if (\\\\$activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
-    \\\\$users = Get-ChildItem "C:\\\\\\\\Users" -Directory | Where-Object { \\\\$_.Name -notin @("Public", "Default", "Default User", "All Users", "Administrator") }
-    if (\\\\$users) { \\\\$activeUser = \\\\$users[0].Name }
+\\\\\\\\$activeUser = \\\\\\\\$env:USERNAME
+if (\\\\\\\\$activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
+    \\\\\\\\$users = Get-ChildItem "C:\\\\\\\\\\\\\\\\Users" -Directory | Where-Object { \\\\\\\\$_.Name -notin @("Public", "Default", "Default User", "All Users", "Administrator") }
+    if (\\\\\\\\$users) { \\\\\\\\$activeUser = \\\\\\\\$users[0].Name }
 }
 
-\\\\$browserCatalog = @(
+\\\\\\\\$browserCatalog = @(
     @{
         Key      = "chrome";
         Name     = "Google Chrome";
-        UserData = "C:\\\\\\\\Users\\\\\\\\\\\\$activeUser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\User Data";
+        UserData = "C:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\\\\\\\\\$activeUser\\\\\\\\\\\\\\\\AppData\\\\\\\\\\\\\\\\Local\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\User Data";
         ExePaths = @(
-            "\\\\$env:ProgramFiles\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe",
-            "\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe",
-            "\\\\$env:LOCALAPPDATA\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe"
+            "\\\\\\\\$env:ProgramFiles\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe",
+            "\\\\\\\\\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe",
+            "\\\\\\\\$env:LOCALAPPDATA\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe"
         );
         ProcessName = "chrome"
     },
     @{
         Key      = "edge";
         Name     = "Microsoft Edge";
-        UserData = "C:\\\\\\\\Users\\\\\\\\\\\\$activeUser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Microsoft\\\\\\\\Edge\\\\\\\\User Data";
+        UserData = "C:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\\\\\\\\\$activeUser\\\\\\\\\\\\\\\\AppData\\\\\\\\\\\\\\\\Local\\\\\\\\\\\\\\\\Microsoft\\\\\\\\\\\\\\\\Edge\\\\\\\\\\\\\\\\User Data";
         ExePaths = @(
-            "\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\Microsoft\\\\\\\\Edge\\\\\\\\Application\\\\\\\\msedge.exe",
-            "\\\\$env:ProgramFiles\\\\\\\\Microsoft\\\\\\\\Edge\\\\\\\\Application\\\\\\\\msedge.exe"
+            "\\\\\\\\\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\\\\\\\\\Microsoft\\\\\\\\\\\\\\\\Edge\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\msedge.exe",
+            "\\\\\\\\$env:ProgramFiles\\\\\\\\\\\\\\\\Microsoft\\\\\\\\\\\\\\\\Edge\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\msedge.exe"
         );
         ProcessName = "msedge"
     },
     @{
         Key      = "brave";
         Name     = "Brave Browser";
-        UserData = "C:\\\\\\\\Users\\\\\\\\\\\\$activeUser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\BraveSoftware\\\\\\\\Brave-Browser\\\\\\\\User Data";
+        UserData = "C:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\\\\\\\\\$activeUser\\\\\\\\\\\\\\\\AppData\\\\\\\\\\\\\\\\Local\\\\\\\\\\\\\\\\BraveSoftware\\\\\\\\\\\\\\\\Brave-Browser\\\\\\\\\\\\\\\\User Data";
         ExePaths = @(
-            "\\\\$env:ProgramFiles\\\\\\\\BraveSoftware\\\\\\\\Brave-Browser\\\\\\\\Application\\\\\\\\brave.exe"
+            "\\\\\\\\$env:ProgramFiles\\\\\\\\\\\\\\\\BraveSoftware\\\\\\\\\\\\\\\\Brave-Browser\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\brave.exe"
         );
         ProcessName = "brave"
     }
 )
 
 # 3. Интерактивное меню выбора профиля (если не передано явно)
-\\\\$availableProfiles = @()
-foreach (\\\\$b in \\\\$browserCatalog) {
-    \\\\$exeFound = \\\\$null
-    foreach (\\\\$ep in \\\\$b.ExePaths) {
-        if (Test-Path \\\\$ep) { \\\\$exeFound = \\\\$ep; break }
+\\\\\\\\$availableProfiles = @()
+foreach (\\\\\\\\$b in \\\\\\\\$browserCatalog) {
+    \\\\\\\\$exeFound = \\\\\\\\$null
+    foreach (\\\\\\\\$ep in \\\\\\\\$b.ExePaths) {
+        if (Test-Path \\\\\\\\$ep) { \\\\\\\\$exeFound = \\\\\\\\$ep; break }
     }
-    if (-not \\\\$exeFound -or -not (Test-Path \\\\$b.UserData)) { continue }
+    if (-not \\\\\\\\$exeFound -or -not (Test-Path \\\\\\\\$b.UserData)) { continue }
 
-    \\\\$metaDict = Get-BrowserProfilesMetadata \\\\$b.UserData
-    foreach (\\\\$k in \\\\$metaDict.Keys) {
-        \\\\$pInfo = \\\\$metaDict[\\\\$k]
-        \\\\$availableProfiles += [PSCustomObject]@{
-            Index       = \\\\$availableProfiles.Count + 1
-            BrowserKey  = \\\\$b.Key
-            BrowserName = \\\\$b.Name
-            BrowserExe  = \\\\$exeFound
-            ProcessName = \\\\$b.ProcessName
-            UserData    = \\\\$b.UserData
-            Folder      = \\\\$pInfo.Folder
-            DisplayName = \\\\$pInfo.DisplayName
-            Email       = \\\\$pInfo.Email
+    \\\\\\\\$metaDict = Get-BrowserProfilesMetadata \\\\\\\\$b.UserData
+    foreach (\\\\\\\\$k in \\\\\\\\$metaDict.Keys) {
+        \\\\\\\\$pInfo = \\\\\\\\$metaDict[\\\\\\\\$k]
+        \\\\\\\\$availableProfiles += [PSCustomObject]@{
+            Index       = \\\\\\\\$availableProfiles.Count + 1
+            BrowserKey  = \\\\\\\\$b.Key
+            BrowserName = \\\\\\\\$b.Name
+            BrowserExe  = \\\\\\\\$exeFound
+            ProcessName = \\\\\\\\$b.ProcessName
+            UserData    = \\\\\\\\$b.UserData
+            Folder      = \\\\\\\\$pInfo.Folder
+            DisplayName = \\\\\\\\$pInfo.DisplayName
+            Email       = \\\\\\\\$pInfo.Email
         }
     }
 }
 
-if (\\\\$availableProfiles.Count -eq 0) {
+if (\\\\\\\\$availableProfiles.Count -eq 0) {
     P "[-] В системе не найдено доступных браузеров и профилей!" "Red"
     return
 }
 
 # Определение выбранного профиля
-\\\\$chosen = \\\\$null
+\\\\\\\\$chosen = \\\\\\\\$null
 
-if (\\\\$Browser -and \\\\$Profile) {
+if (\\\\\\\\$Browser -and \\\\\\\\$Profile) {
     # Параметры переданы через URL/CLI
-    \\\\$chosen = \\\\$availableProfiles | Where-Object { \\\\$_.BrowserKey -eq \\\\$Browser.ToLower() -and (\\\\$_.Folder -eq \\\\$Profile -or \\\\$_.DisplayName -eq \\\\$Profile) } | Select-Object -First 1
+    \\\\\\\\$chosen = \\\\\\\\$availableProfiles | Where-Object { \\\\\\\\$_.BrowserKey -eq \\\\\\\\$Browser.ToLower() -and (\\\\\\\\$_.Folder -eq \\\\\\\\$Profile -or \\\\\\\\$_.DisplayName -eq \\\\\\\\$Profile) } | Select-Object -First 1
 }
 
-if (-not \\\\$chosen) {
+if (-not \\\\\\\\$chosen) {
     # ВЫВОД ИНТЕРАКТИВНОГО МЕНЮ В КОНСОЛЬ
     P "=================================================================" "Yellow"
     P "             ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ ПРОГРЕВА:                      " "Yellow"
     P "=================================================================" "Yellow"
-    foreach (\\\\$ap in \\\\$availableProfiles) {
-        \\\\$mailInfo = if (\\\\$ap.Email) { " (Аккаунт: \\\\$(\\\\$ap.Email))" } else { "" }
-        P " [\\\\$(\\\\$ap.Index)] \\\\$(\\\\$ap.BrowserName) ➔ \\\\\\\`"\\\\$(\\\\$ap.DisplayName)\\\\\\\`"\\\\$mailInfo [Папка: \\\\$(\\\\$ap.Folder)]" "White"
+    foreach (\\\\\\\\$ap in \\\\\\\\$availableProfiles) {
+        \\\\\\\\$mailInfo = if (\\\\\\\\$ap.Email) { " (Аккаунт: \\\\\\\\$(\\\\\\\\$ap.Email))" } else { "" }
+        P " [\\\\\\\\$(\\\\\\\\$ap.Index)] \\\\\\\\$(\\\\\\\\$ap.BrowserName) ➔ \\\\\\\\\\\\\\\`"\\\\\\\\$(\\\\\\\\$ap.DisplayName)\\\\\\\\\\\\\\\`"\\\\\\\\$mailInfo [Папка: \\\\\\\\$(\\\\\\\\$ap.Folder)]" "White"
     }
     P "-----------------------------------------------------------------" "Gray"
     
     # Запрос выбора с тайм-аутом по умолчанию (1 = Default)
-    Write-Host " [?] Введите номер профиля [1-\\\\$(\\\\$availableProfiles.Count)] (Нажмите Enter для 1): " -ForegroundColor Cyan -NoNewline
-    \\\\$userInput = Read-Host
+    Write-Host " [?] Введите номер профиля [1-\\\\\\\\$(\\\\\\\\$availableProfiles.Count)] (Нажмите Enter для 1): " -ForegroundColor Cyan -NoNewline
+    \\\\\\\\$userInput = Read-Host
     
-    \\\\$selectedIdx = 1
-    if (\\\\$userInput -match '^\\\\\\\\d+\\\\$') {
-        \\\\$parsed = [int]\\\\$userInput
-        if (\\\\$parsed -ge 1 -and \\\\$parsed -le \\\\$availableProfiles.Count) {
-            \\\\$selectedIdx = \\\\$parsed
+    \\\\\\\\$selectedIdx = 1
+    if (\\\\\\\\$userInput -match '^\\\\\\\\\\\\\\\\d+\\\\\\\\$') {
+        \\\\\\\\$parsed = [int]\\\\\\\\$userInput
+        if (\\\\\\\\$parsed -ge 1 -and \\\\\\\\$parsed -le \\\\\\\\$availableProfiles.Count) {
+            \\\\\\\\$selectedIdx = \\\\\\\\$parsed
         }
     }
-    \\\\$chosen = \\\\$availableProfiles | Where-Object { \\\\$_.Index -eq \\\\$selectedIdx } | Select-Object -First 1
+    \\\\\\\\$chosen = \\\\\\\\$availableProfiles | Where-Object { \\\\\\\\$_.Index -eq \\\\\\\\$selectedIdx } | Select-Object -First 1
 }
 
 P ""
-P "  -> Выбран профиль:   \\\\$(\\\\$chosen.BrowserName) :: \\\\\\\`"\\\\$(\\\\$chosen.DisplayName)\\\\\\\`"" "Green"
-P "  -> Системная папка:  \\\\$(\\\\$chosen.Folder)" "Green"
+P "  -> Выбран профиль:   \\\\\\\\$(\\\\\\\\$chosen.BrowserName) :: \\\\\\\\\\\\\\\`"\\\\\\\\$(\\\\\\\\$chosen.DisplayName)\\\\\\\\\\\\\\\`"" "Green"
+P "  -> Системная папка:  \\\\\\\\$(\\\\\\\\$chosen.Folder)" "Green"
 P ""
 
 # 4. Геолокация и СИНТЕЗ ЦИФРОВОЙ ЛИЧНОСТИ (LORE SYNTHESIS)
 P "[1/4] Анализ выходного IP и синтез цифровой личности..." "Yellow"
-\\\\$geo = \\\\$null
-\\\\$endpoints = @("http://ip-api.com/json/?fields=status,city,regionName,zip,isp,org,query", "https://ipwho.is/", "https://ipinfo.io/json")
-foreach (\\\\$url in \\\\$endpoints) {
+\\\\\\\\$geo = \\\\\\\\$null
+\\\\\\\\$endpoints = @("http://ip-api.com/json/?fields=status,city,regionName,zip,isp,org,query", "https://ipwho.is/", "https://ipinfo.io/json")
+foreach (\\\\\\\\$url in \\\\\\\\$endpoints) {
     try {
-        \\\\$resp = Invoke-RestMethod -Uri \\\\$url -TimeoutSec 5 -ErrorAction Stop
-        if (\\\\$resp.city) {
-            \\\\$geo = [PSCustomObject]@{
-                IP       = if (\\\\$resp.query) { \\\\$resp.query } elseif (\\\\$resp.ip) { \\\\$resp.ip } else { "130.12.47.191" }
-                City     = \\\\$resp.city
-                Region   = if (\\\\$resp.regionName) { \\\\$resp.regionName } else { \\\\$resp.region }
-                ISP      = if (\\\\$resp.isp) { \\\\$resp.isp } elseif (\\\\$resp.org) { \\\\$resp.org } else { "ZhouyiSat Communications" }
+        \\\\\\\\$resp = Invoke-RestMethod -Uri \\\\\\\\$url -TimeoutSec 5 -ErrorAction Stop
+        if (\\\\\\\\$resp.city) {
+            \\\\\\\\$geo = [PSCustomObject]@{
+                IP       = if (\\\\\\\\$resp.query) { \\\\\\\\$resp.query } elseif (\\\\\\\\$resp.ip) { \\\\\\\\$resp.ip } else { "130.12.47.191" }
+                City     = \\\\\\\\$resp.city
+                Region   = if (\\\\\\\\$resp.regionName) { \\\\\\\\$resp.regionName } else { \\\\\\\\$resp.region }
+                ISP      = if (\\\\\\\\$resp.isp) { \\\\\\\\$resp.isp } elseif (\\\\\\\\$resp.org) { \\\\\\\\$resp.org } else { "ZhouyiSat Communications" }
             }
             break
         }
     } catch {}
 }
-if (-not \\\\$geo) {
-    \\\\$geo = [PSCustomObject]@{ IP = "130.12.47.191"; City = "Fremont"; Region = "California"; ISP = "ZhouyiSat Communications" }
+if (-not \\\\\\\\$geo) {
+    \\\\\\\\$geo = [PSCustomObject]@{ IP = "130.12.47.191"; City = "Fremont"; Region = "California"; ISP = "ZhouyiSat Communications" }
 }
 
-\\\\$city = \\\\$geo.City
-\\\\$state = \\\\$geo.Region
+\\\\\\\\$city = \\\\\\\\$geo.City
+\\\\\\\\$state = \\\\\\\\$geo.Region
 
-P "  -> Локация выхода:   \\\\$(\\\\$geo.City), \\\\$(\\\\$geo.Region) (\\\\$(\\\\$geo.ISP))" "Green"
+P "  -> Локация выхода:   \\\\\\\\$(\\\\\\\\$geo.City), \\\\\\\\$(\\\\\\\\$geo.Region) (\\\\\\\\$(\\\\\\\\$geo.ISP))" "Green"
 
 # Генерация карточки ЛОРа персонажа на основе города
-\\\\$loreName = if (\\\\$chosen.DisplayName -and \\\\$chosen.DisplayName -ne "Default") { \\\\$chosen.DisplayName } else { "Alex" }
-P "  -> Цифровой ЛОР:     Житель \\\\$(\\\\$geo.City), \\\\$loreName (Домашний быт, семейные планы, ремонт, IT)" "DarkCyan"
+\\\\\\\\$loreName = if (\\\\\\\\$chosen.DisplayName -and \\\\\\\\$chosen.DisplayName -ne "Default") { \\\\\\\\$chosen.DisplayName } else { "Alex" }
+P "  -> Цифровой ЛОР:     Житель \\\\\\\\$(\\\\\\\\$geo.City), \\\\\\\\$loreName (Домашний быт, семейные планы, ремонт, IT)" "DarkCyan"
 P ""
 
 # Динамический синтез реалистичных поисковых запросов
-\\\\$personaJourney = @(
+\\\\\\\\$personaJourney = @(
     @{
         Title      = "☕ Утренний кофе и пекарня во Фримонте (опечатка 'cofee' -> 'coffee')";
         TypoText   = "best cofee sho";
-        Correction = "ffee shops and pastries in \\\\$city open now";
-        TargetFull = "best coffee shops and pastries in \\\\$city open now";
-        ClickFirst = \\\\$true
+        Correction = "ffee shops and pastries in \\\\\\\\$city open now";
+        TargetFull = "best coffee shops and pastries in \\\\\\\\$city open now";
+        ClickFirst = \\\\\\\\$true
     },
     @{
         Title      = "🍳 Домашний кулинарный рецепт ужина (опечатка 'chiken pat' -> 'pasta')";
         TypoText   = "easy 20 min garlic chiken pat";
         Correction = "cken pasta recipe dinner";
         TargetFull = "easy 20 min garlic chicken pasta recipe dinner";
-        ClickFirst = \\\\$true
+        ClickFirst = \\\\\\\\$true
     },
     @{
         Title      = "🔧 Бытовой ремонт сантехники (DIY запрос)";
         TypoText   = "how to replace runing tolet flapp";
         Correction = "running toilet flapper valve step by step";
         TargetFull = "how to replace running toilet flapper valve step by step";
-        ClickFirst = \\\\$false
+        ClickFirst = \\\\\\\\$false
     },
     @{
         Title      = "🎯 Коммерческий интернет и спонсорские трекеры";
         TypoText   = "best high speed fiber internet pla";
-        Correction = "ans in \\\\$city reviews";
-        TargetFull = "best high speed fiber internet plans in \\\\$city reviews";
-        ClickFirst = \\\\$true
+        Correction = "ans in \\\\\\\\$city reviews";
+        TargetFull = "best high speed fiber internet plans in \\\\\\\\$city reviews";
+        ClickFirst = \\\\\\\\$true
     }
 )
 
 # 5. Надежный запуск браузера в ОДНОЙ ВИДИМОЙ вкладке
-P "[2/4] Запуск \\\\$(\\\\$chosen.BrowserName) в видимом окне (100% стабильность)..." "Yellow"
+P "[2/4] Запуск \\\\\\\\$(\\\\\\\\$chosen.BrowserName) в видимом окне (100% стабильность)..." "Yellow"
 
-Get-Process -Name \\\\$chosen.ProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name \\\\\\\\$chosen.ProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 600
 
-\\\\$argsList = @(
-    "--user-data-dir=\\\\\\\`"\\\\$(\\\\$chosen.UserData)\\\\\\\`"",
-    "--profile-directory=\\\\\\\`"\\\\$(\\\\$chosen.Folder)\\\\\\\`"",
+\\\\\\\\$argsList = @(
+    "--user-data-dir=\\\\\\\\\\\\\\\`"\\\\\\\\$(\\\\\\\\$chosen.UserData)\\\\\\\\\\\\\\\`"",
+    "--profile-directory=\\\\\\\\\\\\\\\`"\\\\\\\\$(\\\\\\\\$chosen.Folder)\\\\\\\\\\\\\\\`"",
     "--start-maximized",
     "--disable-blink-features=AutomationControlled",
     "https://www.google.com"
 )
 
-\\\\$proc = Start-Process -FilePath \\\\$chosen.BrowserExe -ArgumentList \\\\$argsList -PassThru
+\\\\\\\\$proc = Start-Process -FilePath \\\\\\\\$chosen.BrowserExe -ArgumentList \\\\\\\\$argsList -PassThru
 Start-Sleep -Seconds 4
 
-if (\\\\$proc.MainWindowHandle -ne [IntPtr]::Zero) {
-    [WinInputV6]::ShowWindow(\\\\$proc.MainWindowHandle, 3) | Out-Null # 3 = SW_MAXIMIZE
-    [WinInputV6]::SetForegroundWindow(\\\\$proc.MainWindowHandle) | Out-Null
+if (\\\\\\\\$proc.MainWindowHandle -ne [IntPtr]::Zero) {
+    [WinInputV6]::ShowWindow(\\\\\\\\$proc.MainWindowHandle, 3) | Out-Null # 3 = SW_MAXIMIZE
+    [WinInputV6]::SetForegroundWindow(\\\\\\\\$proc.MainWindowHandle) | Out-Null
 }
 
 [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
@@ -8447,23 +8596,23 @@ Start-Sleep -Milliseconds 400
 # 6. Выполнение сценария поиска в ОДНОЙ ВКЛАДКЕ с переходом по ссылкам и возвратом через Alt+Left
 P "[3/4] Выполнение сценария органического поиска и нагула..." "Yellow"
 
-\\\\$isFirstQuery = \\\\$true
-\\\\$stepIdx = 1
+\\\\\\\\$isFirstQuery = \\\\\\\\$true
+\\\\\\\\$stepIdx = 1
 
-foreach (\\\\$task in \\\\$personaJourney) {
-    P "  [\\\\$stepIdx/\\\\$(\\\\$personaJourney.Count)] \\\\$(\\\\$task.Title)" "Cyan"
+foreach (\\\\\\\\$task in \\\\\\\\$personaJourney) {
+    P "  [\\\\\\\\$stepIdx/\\\\\\\\$(\\\\\\\\$personaJourney.Count)] \\\\\\\\$(\\\\\\\\$task.Title)" "Cyan"
 
-    if (\\\\$isFirstQuery) {
+    if (\\\\\\\\$isFirstQuery) {
         # Центральное поле Google
-        \\\\$inputX = Get-Random -Min 500 -Max 660
-        \\\\$inputY = Get-Random -Min 345 -Max 385
-        [WinInputV6]::Click(\\\\$inputX, \\\\$inputY)
-        \\\\$isFirstQuery = \\\\$false
+        \\\\\\\\$inputX = Get-Random -Min 500 -Max 660
+        \\\\\\\\$inputY = Get-Random -Min 345 -Max 385
+        [WinInputV6]::Click(\\\\\\\\$inputX, \\\\\\\\$inputY)
+        \\\\\\\\$isFirstQuery = \\\\\\\\$false
     } else {
         # В той же вкладке: кликаем в верхнее поле поиска
-        \\\\$topInputX = Get-Random -Min 260 -Max 420
-        \\\\$topInputY = Get-Random -Min 125 -Max 145
-        [WinInputV6]::Click(\\\\$topInputX, \\\\$topInputY)
+        \\\\\\\\$topInputX = Get-Random -Min 260 -Max 420
+        \\\\\\\\$topInputY = Get-Random -Min 125 -Max 145
+        [WinInputV6]::Click(\\\\\\\\$topInputX, \\\\\\\\$topInputY)
         Start-Sleep -Milliseconds 180
         [System.Windows.Forms.SendKeys]::SendWait("^a")
         Start-Sleep -Milliseconds 120
@@ -8472,25 +8621,25 @@ foreach (\\\\$task in \\\\$personaJourney) {
     }
 
     # Посимвольная печать с опечаткой и стиранием
-    P "      -> Живой ввод с опечаткой и исправлением: '\\\\$(\\\\$task.TargetFull)'" "Gray"
-    Type-ExperiencedHuman \\\\$task.TargetFull \\\\$task.TypoText \\\\$task.Correction
+    P "      -> Живой ввод с опечаткой и исправлением: '\\\\\\\\$(\\\\\\\\$task.TargetFull)'" "Gray"
+    Type-ExperiencedHuman \\\\\\\\$task.TargetFull \\\\\\\\$task.TypoText \\\\\\\\$task.Correction
     Start-Sleep -Seconds 4
 
     # Плавный скроллинг выдачи вниз и чтение результатов
-    for (\\\\$s = 0; \\\\$s -lt 3; \\\\$s++) {
+    for (\\\\\\\\$s = 0; \\\\\\\\$s -lt 3; \\\\\\\\$s++) {
         [WinInputV6]::ScrollSmooth(-180, 5)
-        \\\\$curX = Get-Random -Min 380 -Max 720
-        \\\\$curY = Get-Random -Min 280 -Max 480
-        [WinInputV6]::MoveSmooth(\\\\$curX, \\\\$curY, 450)
+        \\\\\\\\$curX = Get-Random -Min 380 -Max 720
+        \\\\\\\\$curY = Get-Random -Min 280 -Max 480
+        [WinInputV6]::MoveSmooth(\\\\\\\\$curX, \\\\\\\\$curY, 450)
         Start-Sleep -Milliseconds (Get-Random -Min 450 -Max 800)
     }
 
     # Переход по результату поиска (БЕЗ закрытия вкладки!)
-    if (\\\\$task.ClickFirst) {
-        \\\\$linkX = Get-Random -Min 360 -Max 580
-        \\\\$linkY = Get-Random -Min 320 -Max 400
+    if (\\\\\\\\$task.ClickFirst) {
+        \\\\\\\\$linkX = Get-Random -Min 360 -Max 580
+        \\\\\\\\$linkY = Get-Random -Min 320 -Max 400
         P "      [+] Клик по ссылке из выдачи и чтение страницы..." "Magenta"
-        [WinInputV6]::Click(\\\\$linkX, \\\\$linkY)
+        [WinInputV6]::Click(\\\\\\\\$linkX, \\\\\\\\$linkY)
         Start-Sleep -Seconds 4
 
         # Читаем открывшийся сайт (скроллинг)
@@ -8509,86 +8658,86 @@ foreach (\\\\$task in \\\\$personaJourney) {
         Start-Sleep -Milliseconds 400
     }
 
-    \\\\$stepIdx++
+    \\\\\\\\$stepIdx++
 }
 
 # 7. Фиксация куков и закрытие сессии
 P ""
 P "[4/4] Фиксация накопленной базы куков и построение графа..." "Yellow"
-Get-Process -Name \\\\$chosen.ProcessName -ErrorAction SilentlyContinue | ForEach-Object { \\\\$_.CloseMainWindow() } | Out-Null
+Get-Process -Name \\\\\\\\$chosen.ProcessName -ErrorAction SilentlyContinue | ForEach-Object { \\\\\\\\$_.CloseMainWindow() } | Out-Null
 Start-Sleep -Seconds 2
-Get-Process -Name \\\\$chosen.ProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name \\\\\\\\$chosen.ProcessName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 
-function Extract-DomainsFromBinary(\\\\$filePath) {
-    if (-not (Test-Path \\\\$filePath)) { return @() }
+function Extract-DomainsFromBinary(\\\\\\\\$filePath) {
+    if (-not (Test-Path \\\\\\\\$filePath)) { return @() }
     try {
-        \\\\$bytes = [System.IO.File]::ReadAllBytes(\\\\$filePath)
-        \\\\$text = [System.Text.Encoding]::ASCII.GetString(\\\\$bytes)
-        \\\\$regex = [regex]'(?i)\\\\\\\\.?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\\\\\.(?:com|org|net|io|co|us|gov|edu|biz|info)'
-        \\\\$matches = \\\\$regex.Matches(\\\\$text)
-        \\\\$domains = @()
-        foreach (\\\\$m in \\\\$matches) {
-            \\\\$val = \\\\$m.Value.Trim().ToLower()
-            if (\\\\$val.Length -gt 4 -and -not (\\\\$val -match '\\\\\\\\.(png|jpg|gif|css|js|woff)\\\\$')) { \\\\$domains += \\\\$val }
+        \\\\\\\\$bytes = [System.IO.File]::ReadAllBytes(\\\\\\\\$filePath)
+        \\\\\\\\$text = [System.Text.Encoding]::ASCII.GetString(\\\\\\\\$bytes)
+        \\\\\\\\$regex = [regex]'(?i)\\\\\\\\\\\\\\\\.?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\\\\\\\\\\\\\.(?:com|org|net|io|co|us|gov|edu|biz|info)'
+        \\\\\\\\$matches = \\\\\\\\$regex.Matches(\\\\\\\\$text)
+        \\\\\\\\$domains = @()
+        foreach (\\\\\\\\$m in \\\\\\\\$matches) {
+            \\\\\\\\$val = \\\\\\\\$m.Value.Trim().ToLower()
+            if (\\\\\\\\$val.Length -gt 4 -and -not (\\\\\\\\$val -match '\\\\\\\\\\\\\\\\.(png|jpg|gif|css|js|woff)\\\\\\\\$')) { \\\\\\\\$domains += \\\\\\\\$val }
         }
-        return \\\\$domains | Select-Object -Unique
+        return \\\\\\\\$domains | Select-Object -Unique
     } catch { return @() }
 }
 
-\\\\$profPath = Join-Path \\\\$chosen.UserData \\\\$chosen.Folder
-\\\\$allDoms = @()
-\\\\$allDoms += Extract-DomainsFromBinary (Join-Path \\\\$profPath "Network\\\\\\\\Cookies")
-\\\\$allDoms += Extract-DomainsFromBinary (Join-Path \\\\$profPath "Network\\\\\\\\Cookies-wal")
-\\\\$allDoms += Extract-DomainsFromBinary (Join-Path \\\\$profPath "History")
-\\\\$uDoms = \\\\$allDoms | Select-Object -Unique | Sort-Object
+\\\\\\\\$profPath = Join-Path \\\\\\\\$chosen.UserData \\\\\\\\$chosen.Folder
+\\\\\\\\$allDoms = @()
+\\\\\\\\$allDoms += Extract-DomainsFromBinary (Join-Path \\\\\\\\$profPath "Network\\\\\\\\\\\\\\\\Cookies")
+\\\\\\\\$allDoms += Extract-DomainsFromBinary (Join-Path \\\\\\\\$profPath "Network\\\\\\\\\\\\\\\\Cookies-wal")
+\\\\\\\\$allDoms += Extract-DomainsFromBinary (Join-Path \\\\\\\\$profPath "History")
+\\\\\\\\$uDoms = \\\\\\\\$allDoms | Select-Object -Unique | Sort-Object
 
-\\\\$googleDoms = \\\\$uDoms | Where-Object { \\\\$_ -match 'google|gstatic|youtube|doubleclick|gvt1' }
-\\\\$adTrackers = \\\\$uDoms | Where-Object { \\\\$_ -match 'doubleclick|criteo|rubicon|adnxs|scorecard|taboola|bing' }
-\\\\$localDoms  = \\\\$uDoms | Where-Object { \\\\$_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|tutor' }
-\\\\$otherDoms  = \\\\$uDoms | Where-Object { \\\\$_ -notin \\\\$googleDoms -and \\\\$_ -notin \\\\$adTrackers -and \\\\$_ -notin \\\\$localDoms }
+\\\\\\\\$googleDoms = \\\\\\\\$uDoms | Where-Object { \\\\\\\\$_ -match 'google|gstatic|youtube|doubleclick|gvt1' }
+\\\\\\\\$adTrackers = \\\\\\\\$uDoms | Where-Object { \\\\\\\\$_ -match 'doubleclick|criteo|rubicon|adnxs|scorecard|taboola|bing' }
+\\\\\\\\$localDoms  = \\\\\\\\$uDoms | Where-Object { \\\\\\\\$_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|tutor' }
+\\\\\\\\$otherDoms  = \\\\\\\\$uDoms | Where-Object { \\\\\\\\$_ -notin \\\\\\\\$googleDoms -and \\\\\\\\$_ -notin \\\\\\\\$adTrackers -and \\\\\\\\$_ -notin \\\\\\\\$localDoms }
 
 P "=================================================================" "Green"
 P "     ULTRA DIGITAL PERSONA & HUMAN BEHAVIOR REPORT v6.0          " "Green"
 P "=================================================================" "Green"
-P "  Браузер:   \\\\$(\\\\$chosen.BrowserName)" "White"
-P "  Профиль:   \\\\\\\`"\\\\$(\\\\$chosen.DisplayName)\\\\\\\`" [Папка: \\\\$(\\\\$chosen.Folder)]" "Cyan"
-P "  Локация:   \\\\$(\\\\$geo.City), \\\\$(\\\\$geo.Region) (\\\\$(\\\\$geo.ISP))" "White"
-P "  Нагуляно:  \\\\$(\\\\$uDoms.Count) активных сайтов в профиле" "White"
+P "  Браузер:   \\\\\\\\$(\\\\\\\\$chosen.BrowserName)" "White"
+P "  Профиль:   \\\\\\\\\\\\\\\`"\\\\\\\\$(\\\\\\\\$chosen.DisplayName)\\\\\\\\\\\\\\\`" [Папка: \\\\\\\\$(\\\\\\\\$chosen.Folder)]" "Cyan"
+P "  Локация:   \\\\\\\\$(\\\\\\\\$geo.City), \\\\\\\\$(\\\\\\\\$geo.Region) (\\\\\\\\$(\\\\\\\\$geo.ISP))" "White"
+P "  Нагуляно:  \\\\\\\\$(\\\\\\\\$uDoms.Count) активных сайтов в профиле" "White"
 P ""
 P "[-] ГРАФ ТРАСТА И ЭКОСИСТЕМЫ ПРОФИЛЯ:" "Cyan"
-if (\\\\$googleDoms) {
-    P "  ├── 🌐 Google Core:      \\\\$(\\\\$googleDoms.Count) доменов" "Yellow"
-    \\\\$googleDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$googleDoms) {
+    P "  ├── 🌐 Google Core:      \\\\\\\\$(\\\\\\\\$googleDoms.Count) доменов" "Yellow"
+    \\\\\\\\$googleDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
-if (\\\\$adTrackers) {
-    P "  ├── 🎯 Ads & Trackers:    \\\\$(\\\\$adTrackers.Count) трекеров" "Yellow"
-    \\\\$adTrackers | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$adTrackers) {
+    P "  ├── 🎯 Ads & Trackers:    \\\\\\\\$(\\\\\\\\$adTrackers.Count) трекеров" "Yellow"
+    \\\\\\\\$adTrackers | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
-if (\\\\$localDoms) {
-    P "  ├── 📍 Локальный нагул:   \\\\$(\\\\$localDoms.Count) сервисов (\\\\$(\\\\$geo.City))" "Yellow"
-    \\\\$localDoms | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$localDoms) {
+    P "  ├── 📍 Локальный нагул:   \\\\\\\\$(\\\\\\\\$localDoms.Count) сервисов (\\\\\\\\$(\\\\\\\\$geo.City))" "Yellow"
+    \\\\\\\\$localDoms | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
-if (\\\\$otherDoms) {
-    P "  └── 🍳 Бытовой нагул:     \\\\$(\\\\$otherDoms.Count) ресурсов (рецепты, DIY)" "Yellow"
-    \\\\$otherDoms | Select-Object -First 6 | ForEach-Object { P "      ├── \\\\$_" "Gray" }
+if (\\\\\\\\$otherDoms) {
+    P "  └── 🍳 Бытовой нагул:     \\\\\\\\$(\\\\\\\\$otherDoms.Count) ресурсов (рецепты, DIY)" "Yellow"
+    \\\\\\\\$otherDoms | Select-Object -First 6 | ForEach-Object { P "      ├── \\\\\\\\$_" "Gray" }
 }
 
 P ""
-\\\\$trustStatus = if (\\\\$uDoms.Count -ge 20) { "HIGH TRUST (Tier 1: Ready for Google AI Studio)" } else { "MEDIUM TRUST" }
-P "  Статус профиля:    [\\\\$trustStatus]" "Green"
+\\\\\\\\$trustStatus = if (\\\\\\\\$uDoms.Count -ge 20) { "HIGH TRUST (Tier 1: Ready for Google AI Studio)" } else { "MEDIUM TRUST" }
+P "  Статус профиля:    [\\\\\\\\$trustStatus]" "Green"
 P "=================================================================" "Green"
 
 # 8. Открытие страницы куков в выбранном профиле
-Start-Process -FilePath \\\\$chosen.BrowserExe -ArgumentList @(
-    "--user-data-dir=\\\\\\\`"\\\\$(\\\\$chosen.UserData)\\\\\\\`"",
-    "--profile-directory=\\\\\\\`"\\\\$(\\\\$chosen.Folder)\\\\\\\`"",
+Start-Process -FilePath \\\\\\\\$chosen.BrowserExe -ArgumentList @(
+    "--user-data-dir=\\\\\\\\\\\\\\\`"\\\\\\\\$(\\\\\\\\$chosen.UserData)\\\\\\\\\\\\\\\`"",
+    "--profile-directory=\\\\\\\\\\\\\\\`"\\\\\\\\$(\\\\\\\\$chosen.Folder)\\\\\\\\\\\\\\\`"",
     "--start-maximized",
     "chrome://settings/content/all"
 ) | Out-Null
 
-\\\\$finalOutput = \\\\$sb.ToString() + "\\\\\\\`r\\\\\\\`n[OK] Copy by buffer\\\\\\\`r\\\\\\\`n"
-try { Set-Clipboard -Value \\\\$finalOutput } catch { [System.Windows.Forms.Clipboard]::SetText(\\\\$finalOutput) }
+\\\\\\\\$finalOutput = \\\\\\\\$sb.ToString() + "\\\\\\\\\\\\\\\`r\\\\\\\\\\\\\\\`n[OK] Copy by buffer\\\\\\\\\\\\\\\`r\\\\\\\\\\\\\\\`n"
+try { Set-Clipboard -Value \\\\\\\\$finalOutput } catch { [System.Windows.Forms.Clipboard]::SetText(\\\\\\\\$finalOutput) }
 Write-Host ""
 Write-Host "[OK] Copy by buffer" -ForegroundColor Green
 `,
@@ -8606,19 +8755,19 @@ Write-Host "[OK] Copy by buffer" -ForegroundColor Green
 #>
 
 param(
-    [Parameter(Mandatory=\\\\$false)]
-    [string]\\\\$Key = "akz2026"
+    [Parameter(Mandatory=\\\\\\\\$false)]
+    [string]\\\\\\\\$Key = "akz2026"
 )
 
 # Проверка персонального ключа доступа
-\\\\$AUTHORIZED_KEY = "akz2026"
-if (\\\\$Key -ne \\\\$AUTHORIZED_KEY) {
+\\\\\\\\$AUTHORIZED_KEY = "akz2026"
+if (\\\\\\\\$Key -ne \\\\\\\\$AUTHORIZED_KEY) {
     Write-Host "[-] Access Denied: Unauthorized script execution. Invalid Key." -ForegroundColor Red
     return
 }
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-\\\\$ErrorActionPreference = 'SilentlyContinue'
+\\\\\\\\$ErrorActionPreference = 'SilentlyContinue'
 
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -8713,23 +8862,23 @@ public class WinInputV5 {
 "@
 }
 
-\\\\$sb = [System.Text.StringBuilder]::new()
-function P(\\\\$text, \\\\$color="White") {
-    Write-Host \\\\$text -ForegroundColor \\\\$color
-    [void]\\\\$sb.AppendLine(\\\\$text)
+\\\\\\\\$sb = [System.Text.StringBuilder]::new()
+function P(\\\\\\\\$text, \\\\\\\\$color="White") {
+    Write-Host \\\\\\\\$text -ForegroundColor \\\\\\\\$color
+    [void]\\\\\\\\$sb.AppendLine(\\\\\\\\$text)
 }
 
 # Функция живого посимвольного ввода опытного пользователя с симуляцией опечаток и исправлений
-function Type-ExperiencedHuman([string]\\\\$targetText, [string]\\\\$typoText, [string]\\\\$correction) {
+function Type-ExperiencedHuman([string]\\\\\\\\$targetText, [string]\\\\\\\\$typoText, [string]\\\\\\\\$correction) {
     # 1. Печатаем начальную часть (с намеренной опечаткой, если задана)
-    \\\\$textToType = if (\\\\$typoText) { \\\\$typoText } else { \\\\$targetText }
+    \\\\\\\\$textToType = if (\\\\\\\\$typoText) { \\\\\\\\$typoText } else { \\\\\\\\$targetText }
     
-    foreach (\\\\$ch in \\\\$textToType.ToCharArray()) {
-        \\\\$c = [string]\\\\$ch
-        if (\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) {
-            \\\\$c = "{\\\\$c}"
+    foreach (\\\\\\\\$ch in \\\\\\\\$textToType.ToCharArray()) {
+        \\\\\\\\$c = [string]\\\\\\\\$ch
+        if (\\\\\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) {
+            \\\\\\\\$c = "{\\\\\\\\$c}"
         }
-        [System.Windows.Forms.SendKeys]::SendWait(\\\\$c)
+        [System.Windows.Forms.SendKeys]::SendWait(\\\\\\\\$c)
         
         # Скорость опытного наборщика: 35–85 мс между клавишами
         Start-Sleep -Milliseconds (Get-Random -Min 35 -Max 85)
@@ -8741,13 +8890,13 @@ function Type-ExperiencedHuman([string]\\\\$targetText, [string]\\\\$typoText, [
     }
 
     # 2. Если была опечатка: пауза осознания -> стирание Backspace -> ввод правильного окончания
-    if (\\\\$typoText -and \\\\$correction) {
+    if (\\\\\\\\$typoText -and \\\\\\\\$correction) {
         # Задержка: "заметил ошибку"
         Start-Sleep -Milliseconds (Get-Random -Min 180 -Max 340)
         
         # Сколько букв нужно стереть
-        \\\\$backspacesCount = (Get-Random -Min 2 -Max 4)
-        for (\\\\$b = 0; \\\\$b -lt \\\\$backspacesCount; \\\\$b++) {
+        \\\\\\\\$backspacesCount = (Get-Random -Min 2 -Max 4)
+        for (\\\\\\\\$b = 0; \\\\\\\\$b -lt \\\\\\\\$backspacesCount; \\\\\\\\$b++) {
             [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}")
             Start-Sleep -Milliseconds (Get-Random -Min 60 -Max 110)
         }
@@ -8755,12 +8904,12 @@ function Type-ExperiencedHuman([string]\\\\$targetText, [string]\\\\$typoText, [
         Start-Sleep -Milliseconds (Get-Random -Min 90 -Max 180)
         
         # Допечатываем правильное окончание
-        foreach (\\\\$ch in \\\\$correction.ToCharArray()) {
-            \\\\$c = [string]\\\\$ch
-            if (\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) {
-                \\\\$c = "{\\\\$c}"
+        foreach (\\\\\\\\$ch in \\\\\\\\$correction.ToCharArray()) {
+            \\\\\\\\$c = [string]\\\\\\\\$ch
+            if (\\\\\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) {
+                \\\\\\\\$c = "{\\\\\\\\$c}"
             }
-            [System.Windows.Forms.SendKeys]::SendWait(\\\\$c)
+            [System.Windows.Forms.SendKeys]::SendWait(\\\\\\\\$c)
             Start-Sleep -Milliseconds (Get-Random -Min 35 -Max 75)
         }
     }
@@ -8779,32 +8928,32 @@ P ""
 
 # 1. Определение локации IP
 P "[1/5] Определение локации выходного узла..." "Yellow"
-\\\\$geo = \\\\$null
-\\\\$endpoints = @(
+\\\\\\\\$geo = \\\\\\\\$null
+\\\\\\\\$endpoints = @(
     "http://ip-api.com/json/?fields=status,message,country,regionName,city,zip,lat,lon,timezone,isp,org,query",
     "https://ipwho.is/",
     "https://ipinfo.io/json"
 )
 
-foreach (\\\\$url in \\\\$endpoints) {
+foreach (\\\\\\\\$url in \\\\\\\\$endpoints) {
     try {
-        \\\\$resp = Invoke-RestMethod -Uri \\\\$url -TimeoutSec 5 -ErrorAction Stop
-        if (\\\\$resp.city) {
-            \\\\$geo = [PSCustomObject]@{
-                IP       = if (\\\\$resp.query) { \\\\$resp.query } elseif (\\\\$resp.ip) { \\\\$resp.ip } else { "130.12.47.191" }
-                City     = \\\\$resp.city
-                Region   = if (\\\\$resp.regionName) { \\\\$resp.regionName } else { \\\\$resp.region }
-                Country  = if (\\\\$resp.country) { \\\\$resp.country } else { "United States" }
-                Zip      = if (\\\\$resp.zip) { \\\\$resp.zip } else { \\\\$resp.postal }
-                ISP      = if (\\\\$resp.isp) { \\\\$resp.isp } elseif (\\\\$resp.org) { \\\\$resp.org } else { \\\\$resp.connection.isp }
+        \\\\\\\\$resp = Invoke-RestMethod -Uri \\\\\\\\$url -TimeoutSec 5 -ErrorAction Stop
+        if (\\\\\\\\$resp.city) {
+            \\\\\\\\$geo = [PSCustomObject]@{
+                IP       = if (\\\\\\\\$resp.query) { \\\\\\\\$resp.query } elseif (\\\\\\\\$resp.ip) { \\\\\\\\$resp.ip } else { "130.12.47.191" }
+                City     = \\\\\\\\$resp.city
+                Region   = if (\\\\\\\\$resp.regionName) { \\\\\\\\$resp.regionName } else { \\\\\\\\$resp.region }
+                Country  = if (\\\\\\\\$resp.country) { \\\\\\\\$resp.country } else { "United States" }
+                Zip      = if (\\\\\\\\$resp.zip) { \\\\\\\\$resp.zip } else { \\\\\\\\$resp.postal }
+                ISP      = if (\\\\\\\\$resp.isp) { \\\\\\\\$resp.isp } elseif (\\\\\\\\$resp.org) { \\\\\\\\$resp.org } else { \\\\\\\\$resp.connection.isp }
             }
             break
         }
     } catch {}
 }
 
-if (-not \\\\$geo -or -not \\\\$geo.City) {
-    \\\\$geo = [PSCustomObject]@{
+if (-not \\\\\\\\$geo -or -not \\\\\\\\$geo.City) {
+    \\\\\\\\$geo = [PSCustomObject]@{
         IP       = "130.12.47.191"
         City     = "Fremont"
         Region   = "California"
@@ -8814,75 +8963,75 @@ if (-not \\\\$geo -or -not \\\\$geo.City) {
     }
 }
 
-P "  -> Локация:     \\\\$(\\\\$geo.City), \\\\$(\\\\$geo.Region) (ZIP: \\\\$(\\\\$geo.Zip))" "Green"
-P "  -> Провайдер:   \\\\$(\\\\$geo.ISP)" "Green"
+P "  -> Локация:     \\\\\\\\$(\\\\\\\\$geo.City), \\\\\\\\$(\\\\\\\\$geo.Region) (ZIP: \\\\\\\\$(\\\\\\\\$geo.Zip))" "Green"
+P "  -> Провайдер:   \\\\\\\\$(\\\\\\\\$geo.ISP)" "Green"
 P ""
 
 # 2. Подготовка профиля Chrome
 P "[2/5] Подготовка рабочего профиля пользователя..." "Yellow"
-\\\\$chromePath = "\\\\$env:ProgramFiles\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe"
-if (-not (Test-Path \\\\$chromePath)) { \\\\$chromePath = "\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe" }
-if (-not (Test-Path \\\\$chromePath)) { \\\\$chromePath = "\\\\$env:LOCALAPPDATA\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe" }
+\\\\\\\\$chromePath = "\\\\\\\\$env:ProgramFiles\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe"
+if (-not (Test-Path \\\\\\\\$chromePath)) { \\\\\\\\$chromePath = "\\\\\\\\\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe" }
+if (-not (Test-Path \\\\\\\\$chromePath)) { \\\\\\\\$chromePath = "\\\\\\\\$env:LOCALAPPDATA\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe" }
 
-if (-not (Test-Path \\\\$chromePath)) {
+if (-not (Test-Path \\\\\\\\$chromePath)) {
     P "[-] Google Chrome не найден!" "Red"
     return
 }
 
-\\\\$activeUser = \\\\$env:USERNAME
-if (\\\\$activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
-    \\\\$users = Get-ChildItem "C:\\\\\\\\Users" -Directory | Where-Object { \\\\$_.Name -notin @("Public", "Default", "Default User", "All Users", "Administrator") }
-    if (\\\\$users) { \\\\$activeUser = \\\\$users[0].Name }
+\\\\\\\\$activeUser = \\\\\\\\$env:USERNAME
+if (\\\\\\\\$activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
+    \\\\\\\\$users = Get-ChildItem "C:\\\\\\\\\\\\\\\\Users" -Directory | Where-Object { \\\\\\\\$_.Name -notin @("Public", "Default", "Default User", "All Users", "Administrator") }
+    if (\\\\\\\\$users) { \\\\\\\\$activeUser = \\\\\\\\$users[0].Name }
 }
-\\\\$userChromeData = "C:\\\\\\\\Users\\\\\\\\\\\\$activeUser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\User Data"
+\\\\\\\\$userChromeData = "C:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\\\\\\\\\$activeUser\\\\\\\\\\\\\\\\AppData\\\\\\\\\\\\\\\\Local\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\User Data"
 
 # Закрываем старые висящие сессии перед стартом
 Get-Process -Name chrome -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 600
 
 # 3. Маршрут цифровой личности в ОДНОЙ ВКЛАДКЕ (быт, опечатки, рецепты, Ctrl+Click)
-\\\\$city = \\\\$geo.City
+\\\\\\\\$city = \\\\\\\\$geo.City
 
-\\\\$journey = @(
+\\\\\\\\$journey = @(
     @{
         Title        = "☕ Утренний кофе во Фримонте (опечатка 'cofee' -> 'coffee')";
         TypoText     = "best cofee sho";
-        Correction   = "ffee shops in \\\\$city open now";
-        TargetFull   = "best coffee shops in \\\\$city open now";
-        OpenResult   = \\\\$true;
-        IsCommercial = \\\\$false
+        Correction   = "ffee shops in \\\\\\\\$city open now";
+        TargetFull   = "best coffee shops in \\\\\\\\$city open now";
+        OpenResult   = \\\\\\\\$true;
+        IsCommercial = \\\\\\\\$false
     },
     @{
         Title        = "🍳 Кулинарный рецепт ужина (опечатка 'patsa' -> 'pasta')";
         TypoText     = "easy 20 min garlic chiken pat";
         Correction   = "cken pasta recipe dinner";
         TargetFull   = "easy 20 min garlic chicken pasta recipe dinner";
-        OpenResult   = \\\\$true;
-        IsCommercial = \\\\$false
+        OpenResult   = \\\\\\\\$true;
+        IsCommercial = \\\\\\\\$false
     },
     @{
         Title        = "🔧 Домашний ремонт сантехники (DIY запрос)";
         TypoText     = "how to replace runing flapp";
         Correction   = "running toilet flapper valve step by step";
         TargetFull   = "how to replace running toilet flapper valve step by step";
-        OpenResult   = \\\\$false;
-        IsCommercial = \\\\$false
+        OpenResult   = \\\\\\\\$false;
+        IsCommercial = \\\\\\\\$false
     },
     @{
         Title        = "🎯 Коммерческий интернет (захват спонсорских трекеров)";
         TypoText     = "best home fiber internet pla";
-        Correction   = "ans in \\\\$city reviews";
-        TargetFull   = "best home fiber internet plans in \\\\$city reviews";
-        OpenResult   = \\\\$true;
-        IsCommercial = \\\\$true
+        Correction   = "ans in \\\\\\\\$city reviews";
+        TargetFull   = "best home fiber internet plans in \\\\\\\\$city reviews";
+        OpenResult   = \\\\\\\\$true;
+        IsCommercial = \\\\\\\\$true
     }
 )
 
 P "[3/5] Запуск ОДНОЙ вкладки Google и симуляция живого поиска..." "Yellow"
 
 # Открываем ОДНО окно и ОДНУ вкладку Google
-\\\\$proc = Start-Process -FilePath \\\\$chromePath -ArgumentList @(
-    "--user-data-dir=\\\\\\\`"\\\\$userChromeData\\\\\\\`"",
+\\\\\\\\$proc = Start-Process -FilePath \\\\\\\\$chromePath -ArgumentList @(
+    "--user-data-dir=\\\\\\\\\\\\\\\`"\\\\\\\\$userChromeData\\\\\\\\\\\\\\\`"",
     "--start-maximized",
     "--disable-blink-features=AutomationControlled",
     "https://www.google.com"
@@ -8890,34 +9039,34 @@ P "[3/5] Запуск ОДНОЙ вкладки Google и симуляция ж�
 
 Start-Sleep -Seconds 4
 
-if (\\\\$proc.MainWindowHandle -ne [IntPtr]::Zero) {
-    [WinInputV5]::SetForegroundWindow(\\\\$proc.MainWindowHandle) | Out-Null
+if (\\\\\\\\$proc.MainWindowHandle -ne [IntPtr]::Zero) {
+    [WinInputV5]::SetForegroundWindow(\\\\\\\\$proc.MainWindowHandle) | Out-Null
 }
 
 # Подтверждаем согласие с куками, если всплыло окно
 [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
 Start-Sleep -Milliseconds 400
 
-\\\\$isFirstQuery = \\\\$true
-\\\\$step = 1
+\\\\\\\\$isFirstQuery = \\\\\\\\$true
+\\\\\\\\$step = 1
 
-foreach (\\\\$item in \\\\$journey) {
-    P "  [\\\\$step/\\\\$(\\\\$journey.Count)] \\\\$(\\\\$item.Title)" "Cyan"
+foreach (\\\\\\\\$item in \\\\\\\\$journey) {
+    P "  [\\\\\\\\$step/\\\\\\\\$(\\\\\\\\$journey.Count)] \\\\\\\\$(\\\\\\\\$item.Title)" "Cyan"
 
-    if (\\\\$isFirstQuery) {
+    if (\\\\\\\\$isFirstQuery) {
         # На главной странице Google: кликаем прямо в центральное поле ввода
-        \\\\$inputX = Get-Random -Min 480 -Max 680
-        \\\\$inputY = Get-Random -Min 345 -Max 385
-        P "      -> Наведение на центральное поле поиска (\\\\$inputX, \\\\$inputY)..." "Gray"
-        [WinInputV5]::Click(\\\\$inputX, \\\\$inputY)
-        \\\\$isFirstQuery = \\\\$false
+        \\\\\\\\$inputX = Get-Random -Min 480 -Max 680
+        \\\\\\\\$inputY = Get-Random -Min 345 -Max 385
+        P "      -> Наведение на центральное поле поиска (\\\\\\\\$inputX, \\\\\\\\$inputY)..." "Gray"
+        [WinInputV5]::Click(\\\\\\\\$inputX, \\\\\\\\$inputY)
+        \\\\\\\\$isFirstQuery = \\\\\\\\$false
     } else {
         # В СУЩЕСТВУЮЩЕЙ ВКЛАДКЕ ВЫДАЧИ: возвращаемся в ТО ЖЕ САМОЕ поле ввода наверху!
         # Очищаем старый запрос естественным выделением (Ctrl+A -> Backspace)
-        \\\\$topInputX = Get-Random -Min 240 -Max 450
-        \\\\$topInputY = Get-Random -Min 125 -Max 145
-        P "      -> Возврат в то же поле поиска наверху страницы (\\\\$topInputX, \\\\$topInputY)..." "Gray"
-        [WinInputV5]::Click(\\\\$topInputX, \\\\$topInputY)
+        \\\\\\\\$topInputX = Get-Random -Min 240 -Max 450
+        \\\\\\\\$topInputY = Get-Random -Min 125 -Max 145
+        P "      -> Возврат в то же поле поиска наверху страницы (\\\\\\\\$topInputX, \\\\\\\\$topInputY)..." "Gray"
+        [WinInputV5]::Click(\\\\\\\\$topInputX, \\\\\\\\$topInputY)
         Start-Sleep -Milliseconds 180
         
         # Выделяем весь старый текст и стираем
@@ -8929,28 +9078,28 @@ foreach (\\\\$item in \\\\$journey) {
 
     # Посимвольная печать с опечаткой и исправлением
     P "      -> Живая печать запроса с микроопечаткой и исправлением..." "Gray"
-    Type-ExperiencedHuman \\\\$item.TargetFull \\\\$item.TypoText \\\\$item.Correction
+    Type-ExperiencedHuman \\\\\\\\$item.TargetFull \\\\\\\\$item.TypoText \\\\\\\\$item.Correction
 
     # Ждем загрузки выдачи Google
     Start-Sleep -Seconds 4
 
     # Читаем выдачу: плавный скроллинг вниз
-    for (\\\\$i = 0; \\\\$i -lt 3; \\\\$i++) {
+    for (\\\\\\\\$i = 0; \\\\\\\\$i -lt 3; \\\\\\\\$i++) {
         [WinInputV5]::ScrollSmooth(-180, 5)
         # Водим мышкой по результатам
-        \\\\$curX = Get-Random -Min 380 -Max 720
-        \\\\$curY = Get-Random -Min 280 -Max 480
-        [WinInputV5]::MoveSmooth(\\\\$curX, \\\\$curY, 450)
+        \\\\\\\\$curX = Get-Random -Min 380 -Max 720
+        \\\\\\\\$curY = Get-Random -Min 280 -Max 480
+        [WinInputV5]::MoveSmooth(\\\\\\\\$curX, \\\\\\\\$curY, 450)
         Start-Sleep -Milliseconds (Get-Random -Min 450 -Max 800)
     }
 
     # Если требуется открыть результат: делаем Ctrl+Click (открытие ссылки в фоновой вкладке)
-    if (\\\\$item.OpenResult) {
-        \\\\$linkX = Get-Random -Min 350 -Max 600
-        \\\\$linkY = if (\\\\$item.IsCommercial) { Get-Random -Min 230 -Max 280 } else { Get-Random -Min 320 -Max 420 }
+    if (\\\\\\\\$item.OpenResult) {
+        \\\\\\\\$linkX = Get-Random -Min 350 -Max 600
+        \\\\\\\\$linkY = if (\\\\\\\\$item.IsCommercial) { Get-Random -Min 230 -Max 280 } else { Get-Random -Min 320 -Max 420 }
         
         P "      [⚡] Power-User действие: Ctrl + Left Click по результату..." "Magenta"
-        [WinInputV5]::CtrlClick(\\\\$linkX, \\\\$linkY)
+        [WinInputV5]::CtrlClick(\\\\\\\\$linkX, \\\\\\\\$linkY)
         Start-Sleep -Milliseconds 900
 
         # Переключаемся на открытую вкладку через Ctrl+Tab
@@ -8974,84 +9123,84 @@ foreach (\\\\$item in \\\\$journey) {
         Start-Sleep -Milliseconds 400
     }
 
-    \\\\$step++
+    \\\\\\\\$step++
 }
 
 # 4. Фиксация базы куков
 P ""
 P "[4/5] Фиксация базы куков и трекеров на диске..." "Yellow"
-Get-Process -Name chrome -ErrorAction SilentlyContinue | ForEach-Object { \\\\$_.CloseMainWindow() } | Out-Null
+Get-Process -Name chrome -ErrorAction SilentlyContinue | ForEach-Object { \\\\\\\\$_.CloseMainWindow() } | Out-Null
 Start-Sleep -Seconds 2
 Get-Process -Name chrome -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 
-function Extract-DomainsFromBinary(\\\\$filePath) {
-    if (-not (Test-Path \\\\$filePath)) { return @() }
+function Extract-DomainsFromBinary(\\\\\\\\$filePath) {
+    if (-not (Test-Path \\\\\\\\$filePath)) { return @() }
     try {
-        \\\\$bytes = [System.IO.File]::ReadAllBytes(\\\\$filePath)
-        \\\\$text = [System.Text.Encoding]::ASCII.GetString(\\\\$bytes)
-        \\\\$regex = [regex]'(?i)\\\\\\\\.?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\\\\\.(?:com|org|net|io|co|us|gov|edu|biz|info)'
-        \\\\$matches = \\\\$regex.Matches(\\\\$text)
-        \\\\$domains = @()
-        foreach (\\\\$m in \\\\$matches) {
-            \\\\$val = \\\\$m.Value.Trim().ToLower()
-            if (\\\\$val.Length -gt 4 -and -not (\\\\$val -match '\\\\\\\\.(png|jpg|gif|css|js|woff)\\\\$')) { \\\\$domains += \\\\$val }
+        \\\\\\\\$bytes = [System.IO.File]::ReadAllBytes(\\\\\\\\$filePath)
+        \\\\\\\\$text = [System.Text.Encoding]::ASCII.GetString(\\\\\\\\$bytes)
+        \\\\\\\\$regex = [regex]'(?i)\\\\\\\\\\\\\\\\.?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\\\\\\\\\\\\\.(?:com|org|net|io|co|us|gov|edu|biz|info)'
+        \\\\\\\\$matches = \\\\\\\\$regex.Matches(\\\\\\\\$text)
+        \\\\\\\\$domains = @()
+        foreach (\\\\\\\\$m in \\\\\\\\$matches) {
+            \\\\\\\\$val = \\\\\\\\$m.Value.Trim().ToLower()
+            if (\\\\\\\\$val.Length -gt 4 -and -not (\\\\\\\\$val -match '\\\\\\\\\\\\\\\\.(png|jpg|gif|css|js|woff)\\\\\\\\$')) { \\\\\\\\$domains += \\\\\\\\$val }
         }
-        return \\\\$domains | Select-Object -Unique
+        return \\\\\\\\$domains | Select-Object -Unique
     } catch { return @() }
 }
 
-\\\\$allDomains = @()
-\\\\$allDomains += Extract-DomainsFromBinary "\\\\$userChromeData\\\\\\\\Default\\\\\\\\Network\\\\\\\\Cookies"
-\\\\$allDomains += Extract-DomainsFromBinary "\\\\$userChromeData\\\\\\\\Default\\\\\\\\Network\\\\\\\\Cookies-wal"
-\\\\$allDomains += Extract-DomainsFromBinary "\\\\$userChromeData\\\\\\\\Default\\\\\\\\History"
-\\\\$uniqueDomains = \\\\$allDomains | Select-Object -Unique | Sort-Object
+\\\\\\\\$allDomains = @()
+\\\\\\\\$allDomains += Extract-DomainsFromBinary "\\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default\\\\\\\\\\\\\\\\Network\\\\\\\\\\\\\\\\Cookies"
+\\\\\\\\$allDomains += Extract-DomainsFromBinary "\\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default\\\\\\\\\\\\\\\\Network\\\\\\\\\\\\\\\\Cookies-wal"
+\\\\\\\\$allDomains += Extract-DomainsFromBinary "\\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default\\\\\\\\\\\\\\\\History"
+\\\\\\\\$uniqueDomains = \\\\\\\\$allDomains | Select-Object -Unique | Sort-Object
 
-\\\\$googleDoms = \\\\$uniqueDomains | Where-Object { \\\\$_ -match 'google|gstatic|youtube|googleadservices|googletag|gvt1' }
-\\\\$adTrackers = \\\\$uniqueDomains | Where-Object { \\\\$_ -match 'doubleclick|criteo|rubicon|adnxs|casalemedia|scorecard|taboola|bing' }
-\\\\$localDoms  = \\\\$uniqueDomains | Where-Object { \\\\$_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|tutor' }
-\\\\$otherDoms  = \\\\$uniqueDomains | Where-Object { \\\\$_ -notin \\\\$googleDoms -and \\\\$_ -notin \\\\$adTrackers -and \\\\$_ -notin \\\\$localDoms }
+\\\\\\\\$googleDoms = \\\\\\\\$uniqueDomains | Where-Object { \\\\\\\\$_ -match 'google|gstatic|youtube|googleadservices|googletag|gvt1' }
+\\\\\\\\$adTrackers = \\\\\\\\$uniqueDomains | Where-Object { \\\\\\\\$_ -match 'doubleclick|criteo|rubicon|adnxs|casalemedia|scorecard|taboola|bing' }
+\\\\\\\\$localDoms  = \\\\\\\\$uniqueDomains | Where-Object { \\\\\\\\$_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|tutor' }
+\\\\\\\\$otherDoms  = \\\\\\\\$uniqueDomains | Where-Object { \\\\\\\\$_ -notin \\\\\\\\$googleDoms -and \\\\\\\\$_ -notin \\\\\\\\$adTrackers -and \\\\\\\\$_ -notin \\\\\\\\$localDoms }
 
 P "=================================================================" "Green"
 P "     ULTRA DIGITAL PERSONA & HUMAN BEHAVIOR REPORT v5.0          " "Green"
 P "=================================================================" "Green"
-P "  Локация IP:        \\\\$(\\\\$geo.City), \\\\$(\\\\$geo.Region) (\\\\$(\\\\$geo.ISP))" "White"
-P "  Профиль браузера:  \\\\$userChromeData\\\\\\\\Default" "White"
-P "  Нагуляно сайтов:   \\\\$(\\\\$uniqueDomains.Count) активных доменов" "White"
+P "  Локация IP:        \\\\\\\\$(\\\\\\\\$geo.City), \\\\\\\\$(\\\\\\\\$geo.Region) (\\\\\\\\$(\\\\\\\\$geo.ISP))" "White"
+P "  Профиль браузера:  \\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default" "White"
+P "  Нагуляно сайтов:   \\\\\\\\$(\\\\\\\\$uniqueDomains.Count) активных доменов" "White"
 P ""
 P "[-] ДЕРЕВО НАГУЛА И ЦИФРОВОЙ ЛИЧНОСТИ:" "Cyan"
-if (\\\\$googleDoms) {
-    P "  ├── 🌐 Google Core Ecosystem (\\\\$(\\\\$googleDoms.Count) доменов)" "Yellow"
-    \\\\$googleDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$googleDoms) {
+    P "  ├── 🌐 Google Core Ecosystem (\\\\\\\\$(\\\\\\\\$googleDoms.Count) доменов)" "Yellow"
+    \\\\\\\\$googleDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
-if (\\\\$adTrackers) {
-    P "  ├── 🎯 Рекламные трекеры и спонсоры (\\\\$(\\\\$adTrackers.Count) трекеров)" "Yellow"
-    \\\\$adTrackers | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$adTrackers) {
+    P "  ├── 🎯 Рекламные трекеры и спонсоры (\\\\\\\\$(\\\\\\\\$adTrackers.Count) трекеров)" "Yellow"
+    \\\\\\\\$adTrackers | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
-if (\\\\$localDoms) {
-    P "  ├── 📍 Локальный контекст (\\\\$(\\\\$geo.City)) (\\\\$(\\\\$localDoms.Count) доменов)" "Yellow"
-    \\\\$localDoms | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$localDoms) {
+    P "  ├── 📍 Локальный контекст (\\\\\\\\$(\\\\\\\\$geo.City)) (\\\\\\\\$(\\\\\\\\$localDoms.Count) доменов)" "Yellow"
+    \\\\\\\\$localDoms | Select-Object -First 6 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
-if (\\\\$otherDoms) {
-    P "  └── 🍳 Бытовой нагул (рецепты/DIY) (\\\\$(\\\\$otherDoms.Count) доменов)" "Yellow"
-    \\\\$otherDoms | Select-Object -First 6 | ForEach-Object { P "      ├── \\\\$_" "Gray" }
+if (\\\\\\\\$otherDoms) {
+    P "  └── 🍳 Бытовой нагул (рецепты/DIY) (\\\\\\\\$(\\\\\\\\$otherDoms.Count) доменов)" "Yellow"
+    \\\\\\\\$otherDoms | Select-Object -First 6 | ForEach-Object { P "      ├── \\\\\\\\$_" "Gray" }
 }
 
 P ""
-\\\\$trustStatus = if (\\\\$uniqueDomains.Count -gt 25) { "MAXIMUM TRUST (Tier 1: Human Organic Footprint)" } else { "HIGH TRUST" }
-P "  Статус профиля:    [\\\\$trustStatus]" "Green"
+\\\\\\\\$trustStatus = if (\\\\\\\\$uniqueDomains.Count -gt 25) { "MAXIMUM TRUST (Tier 1: Human Organic Footprint)" } else { "HIGH TRUST" }
+P "  Статус профиля:    [\\\\\\\\$trustStatus]" "Green"
 P "=================================================================" "Green"
 
 # 5. Запуск Chrome и открытие настроек куков для визуальной проверки (chrome://settings/content/all)
 P "[5/5] Перезапуск Chrome и открытие 'Show All' данных сайтов и куков..." "Yellow"
-Start-Process -FilePath \\\\$chromePath -ArgumentList @(
-    "--user-data-dir=\\\\\\\`"\\\\$userChromeData\\\\\\\`"",
+Start-Process -FilePath \\\\\\\\$chromePath -ArgumentList @(
+    "--user-data-dir=\\\\\\\\\\\\\\\`"\\\\\\\\$userChromeData\\\\\\\\\\\\\\\`"",
     "--start-maximized",
     "chrome://settings/content/all"
 ) | Out-Null
 
-\\\\$finalOutput = \\\\$sb.ToString() + "\\\\\\\`r\\\\\\\`n[OK] Copy by buffer\\\\\\\`r\\\\\\\`n"
-try { Set-Clipboard -Value \\\\$finalOutput } catch { [System.Windows.Forms.Clipboard]::SetText(\\\\$finalOutput) }
+\\\\\\\\$finalOutput = \\\\\\\\$sb.ToString() + "\\\\\\\\\\\\\\\`r\\\\\\\\\\\\\\\`n[OK] Copy by buffer\\\\\\\\\\\\\\\`r\\\\\\\\\\\\\\\`n"
+try { Set-Clipboard -Value \\\\\\\\$finalOutput } catch { [System.Windows.Forms.Clipboard]::SetText(\\\\\\\\$finalOutput) }
 Write-Host ""
 Write-Host "[OK] Copy by buffer" -ForegroundColor Green
 `,
@@ -9068,19 +9217,19 @@ Write-Host "[OK] Copy by buffer" -ForegroundColor Green
 #>
 
 param(
-    [Parameter(Mandatory=\\\\$false)]
-    [string]\\\\$Key = "akz2026"
+    [Parameter(Mandatory=\\\\\\\\$false)]
+    [string]\\\\\\\\$Key = "akz2026"
 )
 
 # Проверка персонального ключа доступа
-\\\\$AUTHORIZED_KEY = "akz2026"
-if (\\\\$Key -ne \\\\$AUTHORIZED_KEY) {
+\\\\\\\\$AUTHORIZED_KEY = "akz2026"
+if (\\\\\\\\$Key -ne \\\\\\\\$AUTHORIZED_KEY) {
     Write-Host "[-] Access Denied: Unauthorized script execution. Invalid Key." -ForegroundColor Red
     return
 }
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-\\\\$ErrorActionPreference = 'SilentlyContinue'
+\\\\\\\\$ErrorActionPreference = 'SilentlyContinue'
 
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -9157,20 +9306,20 @@ public class WinInputV4 {
 "@
 }
 
-\\\\$sb = [System.Text.StringBuilder]::new()
-function P(\\\\$text, \\\\$color="White") {
-    Write-Host \\\\$text -ForegroundColor \\\\$color
-    [void]\\\\$sb.AppendLine(\\\\$text)
+\\\\\\\\$sb = [System.Text.StringBuilder]::new()
+function P(\\\\\\\\$text, \\\\\\\\$color="White") {
+    Write-Host \\\\\\\\$text -ForegroundColor \\\\\\\\$color
+    [void]\\\\\\\\$sb.AppendLine(\\\\\\\\$text)
 }
 
 # Функция живого посимвольного ввода текста с естественными задержками
-function Type-HumanText([string]\\\\$text) {
-    foreach (\\\\$ch in \\\\$text.ToCharArray()) {
-        \\\\$c = [string]\\\\$ch
-        if (\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) {
-            \\\\$c = "{\\\\$c}"
+function Type-HumanText([string]\\\\\\\\$text) {
+    foreach (\\\\\\\\$ch in \\\\\\\\$text.ToCharArray()) {
+        \\\\\\\\$c = [string]\\\\\\\\$ch
+        if (\\\\\\\\$c -in @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')) {
+            \\\\\\\\$c = "{\\\\\\\\$c}"
         }
-        [System.Windows.Forms.SendKeys]::SendWait(\\\\$c)
+        [System.Windows.Forms.SendKeys]::SendWait(\\\\\\\\$c)
         Start-Sleep -Milliseconds (Get-Random -Min 40 -Max 130)
         
         # Редкая задержка на "раздумье" человека
@@ -9191,32 +9340,32 @@ P ""
 
 # 1. Определение локации IP
 P "[1/5] Синхронизация с географической точкой выхода..." "Yellow"
-\\\\$geo = \\\\$null
-\\\\$endpoints = @(
+\\\\\\\\$geo = \\\\\\\\$null
+\\\\\\\\$endpoints = @(
     "http://ip-api.com/json/?fields=status,message,country,regionName,city,zip,lat,lon,timezone,isp,org,query",
     "https://ipwho.is/",
     "https://ipinfo.io/json"
 )
 
-foreach (\\\\$url in \\\\$endpoints) {
+foreach (\\\\\\\\$url in \\\\\\\\$endpoints) {
     try {
-        \\\\$resp = Invoke-RestMethod -Uri \\\\$url -TimeoutSec 5 -ErrorAction Stop
-        if (\\\\$resp.city) {
-            \\\\$geo = [PSCustomObject]@{
-                IP       = if (\\\\$resp.query) { \\\\$resp.query } elseif (\\\\$resp.ip) { \\\\$resp.ip } else { "130.12.47.191" }
-                City     = \\\\$resp.city
-                Region   = if (\\\\$resp.regionName) { \\\\$resp.regionName } else { \\\\$resp.region }
-                Country  = if (\\\\$resp.country) { \\\\$resp.country } else { "United States" }
-                Zip      = if (\\\\$resp.zip) { \\\\$resp.zip } else { \\\\$resp.postal }
-                ISP      = if (\\\\$resp.isp) { \\\\$resp.isp } elseif (\\\\$resp.org) { \\\\$resp.org } else { \\\\$resp.connection.isp }
+        \\\\\\\\$resp = Invoke-RestMethod -Uri \\\\\\\\$url -TimeoutSec 5 -ErrorAction Stop
+        if (\\\\\\\\$resp.city) {
+            \\\\\\\\$geo = [PSCustomObject]@{
+                IP       = if (\\\\\\\\$resp.query) { \\\\\\\\$resp.query } elseif (\\\\\\\\$resp.ip) { \\\\\\\\$resp.ip } else { "130.12.47.191" }
+                City     = \\\\\\\\$resp.city
+                Region   = if (\\\\\\\\$resp.regionName) { \\\\\\\\$resp.regionName } else { \\\\\\\\$resp.region }
+                Country  = if (\\\\\\\\$resp.country) { \\\\\\\\$resp.country } else { "United States" }
+                Zip      = if (\\\\\\\\$resp.zip) { \\\\\\\\$resp.zip } else { \\\\\\\\$resp.postal }
+                ISP      = if (\\\\\\\\$resp.isp) { \\\\\\\\$resp.isp } elseif (\\\\\\\\$resp.org) { \\\\\\\\$resp.org } else { \\\\\\\\$resp.connection.isp }
             }
             break
         }
     } catch {}
 }
 
-if (-not \\\\$geo -or -not \\\\$geo.City) {
-    \\\\$geo = [PSCustomObject]@{
+if (-not \\\\\\\\$geo -or -not \\\\\\\\$geo.City) {
+    \\\\\\\\$geo = [PSCustomObject]@{
         IP       = "130.12.47.191"
         City     = "Fremont"
         Region   = "California"
@@ -9226,74 +9375,74 @@ if (-not \\\\$geo -or -not \\\\$geo.City) {
     }
 }
 
-P "  -> Точка выхода:  \\\\$(\\\\$geo.IP) (\\\\$(\\\\$geo.City), \\\\$(\\\\$geo.Region))" "Green"
-P "  -> Провайдер:     \\\\$(\\\\$geo.ISP)" "Green"
+P "  -> Точка выхода:  \\\\\\\\$(\\\\\\\\$geo.IP) (\\\\\\\\$(\\\\\\\\$geo.City), \\\\\\\\$(\\\\\\\\$geo.Region))" "Green"
+P "  -> Провайдер:     \\\\\\\\$(\\\\\\\\$geo.ISP)" "Green"
 P ""
 
 # 2. Подготовка профиля Chrome
 P "[2/5] Подключение к рабочему профилю браузера..." "Yellow"
-\\\\$chromePath = "\\\\$env:ProgramFiles\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe"
-if (-not (Test-Path \\\\$chromePath)) { \\\\$chromePath = "\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe" }
-if (-not (Test-Path \\\\$chromePath)) { \\\\$chromePath = "\\\\$env:LOCALAPPDATA\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\Application\\\\\\\\chrome.exe" }
+\\\\\\\\$chromePath = "\\\\\\\\$env:ProgramFiles\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe"
+if (-not (Test-Path \\\\\\\\$chromePath)) { \\\\\\\\$chromePath = "\\\\\\\\\\\\\\\${env:ProgramFiles(x86)}\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe" }
+if (-not (Test-Path \\\\\\\\$chromePath)) { \\\\\\\\$chromePath = "\\\\\\\\$env:LOCALAPPDATA\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\Application\\\\\\\\\\\\\\\\chrome.exe" }
 
-if (-not (Test-Path \\\\$chromePath)) {
+if (-not (Test-Path \\\\\\\\$chromePath)) {
     P "[-] Google Chrome не найден!" "Red"
     return
 }
 
-\\\\$activeUser = \\\\$env:USERNAME
-if (\\\\$activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
-    \\\\$users = Get-ChildItem "C:\\\\\\\\Users" -Directory | Where-Object { \\\\$_.Name -notin @("Public", "Default", "Default User", "All Users", "Administrator") }
-    if (\\\\$users) { \\\\$activeUser = \\\\$users[0].Name }
+\\\\\\\\$activeUser = \\\\\\\\$env:USERNAME
+if (\\\\\\\\$activeUser -in @("Administrator", "SYSTEM", "DefaultAppPool")) {
+    \\\\\\\\$users = Get-ChildItem "C:\\\\\\\\\\\\\\\\Users" -Directory | Where-Object { \\\\\\\\$_.Name -notin @("Public", "Default", "Default User", "All Users", "Administrator") }
+    if (\\\\\\\\$users) { \\\\\\\\$activeUser = \\\\\\\\$users[0].Name }
 }
-\\\\$userChromeData = "C:\\\\\\\\Users\\\\\\\\\\\\$activeUser\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Google\\\\\\\\Chrome\\\\\\\\User Data"
+\\\\\\\\$userChromeData = "C:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\\\\\\\\\$activeUser\\\\\\\\\\\\\\\\AppData\\\\\\\\\\\\\\\\Local\\\\\\\\\\\\\\\\Google\\\\\\\\\\\\\\\\Chrome\\\\\\\\\\\\\\\\User Data"
 
 # Закрываем старые процессы перед началом
 Get-Process -Name chrome -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 600
 
 # 3. Маршрут реалистичной цифровой личности (Быт, рецепты, заведения, трекеры)
-\\\\$city = \\\\$geo.City
-\\\\$state = \\\\$geo.Region
+\\\\\\\\$city = \\\\\\\\$geo.City
+\\\\\\\\$state = \\\\\\\\$geo.Region
 
-\\\\$personaRoutine = @(
+\\\\\\\\$personaRoutine = @(
     @{
         Title       = "☕ Завтрак и свежий кофе (локальный запрос)";
-        QueryText   = "best local coffee and fresh bakery in \\\\$city open now";
+        QueryText   = "best local coffee and fresh bakery in \\\\\\\\$city open now";
         TargetType  = "Search";
-        InteractAd  = \\\\$false
+        InteractAd  = \\\\\\\\$false
     },
     @{
         Title       = "🍳 Кулинарный рецепт (домашний быт)";
         QueryText   = "easy 20 minute creamy garlic chicken pasta recipe dinner";
         TargetType  = "Search";
-        InteractAd  = \\\\$false
+        InteractAd  = \\\\\\\\$false
     },
     @{
         Title       = "🔧 Бытовой ремонт в доме (DIY запрос)";
         QueryText   = "how to fix running toilet flapper valve diy step by step";
         TargetType  = "Search";
-        InteractAd  = \\\\$false
+        InteractAd  = \\\\\\\\$false
     },
     @{
         Title       = "🎯 Коммерческий запрос + Клик по рекламному трекеру";
-        QueryText   = "best high speed home fiber internet plans \\\\$city ca";
+        QueryText   = "best high speed home fiber internet plans \\\\\\\\$city ca";
         TargetType  = "Commercial";
-        InteractAd  = \\\\$true
+        InteractAd  = \\\\\\\\$true
     },
     @{
         Title       = "📚 Локальные репетиторы и курсы (семейный контекст)";
-        QueryText   = "private math and sat prep tutors in \\\\$city ca reviews";
+        QueryText   = "private math and sat prep tutors in \\\\\\\\$city ca reviews";
         TargetType  = "Search";
-        InteractAd  = \\\\$false
+        InteractAd  = \\\\\\\\$false
     }
 )
 
 P "[3/5] Запуск интерактивной симуляции с живым посимвольным вводом..." "Yellow"
 
 # Запускаем Chrome один раз на весь сценарий
-\\\\$proc = Start-Process -FilePath \\\\$chromePath -ArgumentList @(
-    "--user-data-dir=\\\\\\\`"\\\\$userChromeData\\\\\\\`"",
+\\\\\\\\$proc = Start-Process -FilePath \\\\\\\\$chromePath -ArgumentList @(
+    "--user-data-dir=\\\\\\\\\\\\\\\`"\\\\\\\\$userChromeData\\\\\\\\\\\\\\\`"",
     "--start-maximized",
     "--disable-blink-features=AutomationControlled",
     "https://www.google.com"
@@ -9301,17 +9450,17 @@ P "[3/5] Запуск интерактивной симуляции с живы�
 
 Start-Sleep -Seconds 4
 
-if (\\\\$proc.MainWindowHandle -ne [IntPtr]::Zero) {
-    [WinInputV4]::SetForegroundWindow(\\\\$proc.MainWindowHandle) | Out-Null
+if (\\\\\\\\$proc.MainWindowHandle -ne [IntPtr]::Zero) {
+    [WinInputV4]::SetForegroundWindow(\\\\\\\\$proc.MainWindowHandle) | Out-Null
 }
 
 # Подтверждение диалога куков Google (если выскочил)
 [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
 Start-Sleep -Milliseconds 400
 
-\\\\$step = 1
-foreach (\\\\$task in \\\\$personaRoutine) {
-    P "  [\\\\$step/\\\\$(\\\\$personaRoutine.Count)] \\\\$(\\\\$task.Title)" "Cyan"
+\\\\\\\\$step = 1
+foreach (\\\\\\\\$task in \\\\\\\\$personaRoutine) {
+    P "  [\\\\\\\\$step/\\\\\\\\$(\\\\\\\\$personaRoutine.Count)] \\\\\\\\$(\\\\\\\\$task.Title)" "Cyan"
 
     # Фокусируемся на адресной строке / строке поиска через Ctrl+L
     [System.Windows.Forms.SendKeys]::SendWait("^l")
@@ -9322,40 +9471,40 @@ foreach (\\\\$task in \\\\$personaRoutine) {
     Start-Sleep -Seconds 3
 
     # Плавное наведение на строку поиска по центру экрана
-    \\\\$searchBoxX = (Get-Random -Min 480 -Max 680)
-    \\\\$searchBoxY = (Get-Random -Min 340 -Max 390)
-    [WinInputV4]::Click(\\\\$searchBoxX, \\\\$searchBoxY)
+    \\\\\\\\$searchBoxX = (Get-Random -Min 480 -Max 680)
+    \\\\\\\\$searchBoxY = (Get-Random -Min 340 -Max 390)
+    [WinInputV4]::Click(\\\\\\\\$searchBoxX, \\\\\\\\$searchBoxY)
     Start-Sleep -Milliseconds 350
 
     # Посимвольный живой ввод запроса
-    P "      Печать: '\\\\$(\\\\$task.QueryText)'" "Gray"
-    Type-HumanText \\\\$task.QueryText
+    P "      Печать: '\\\\\\\\$(\\\\\\\\$task.QueryText)'" "Gray"
+    Type-HumanText \\\\\\\\$task.QueryText
 
     # Ожидание загрузки выдачи Google
     Start-Sleep -Seconds 4
 
     # Плавный скроллинг выдачи вниз и чтение контента
-    for (\\\\$i = 0; \\\\$i -lt 3; \\\\$i++) {
+    for (\\\\\\\\$i = 0; \\\\\\\\$i -lt 3; \\\\\\\\$i++) {
         [WinInputV4]::ScrollSmooth(-200, 5)
         # Водим мышкой по сниппетам
-        \\\\$snippetX = Get-Random -Min 380 -Max 750
-        \\\\$snippetY = Get-Random -Min 280 -Max 520
-        [WinInputV4]::MoveSmooth(\\\\$snippetX, \\\\$snippetY, 500)
+        \\\\\\\\$snippetX = Get-Random -Min 380 -Max 750
+        \\\\\\\\$snippetY = Get-Random -Min 280 -Max 520
+        [WinInputV4]::MoveSmooth(\\\\\\\\$snippetX, \\\\\\\\$snippetY, 500)
         Start-Sleep -Milliseconds (Get-Random -Min 600 -Max 1000)
     }
 
     # Если шаг коммерческий — ловим рекламный спонсорский трекер (Google Ads / DoubleClick)
-    if (\\\\$task.InteractAd) {
+    if (\\\\\\\\$task.InteractAd) {
         P "      [⚡] Обнаружен коммерческий блок трекеров (Sponsored Ads)" "Magenta"
         # Скроллим наверх к рекламе
         [WinInputV4]::ScrollSmooth(350, 6)
         Start-Sleep -Milliseconds 500
 
         # Кликаем по верхнему рекламному объявлению (обычно Y: 240-310)
-        \\\\$adClickX = Get-Random -Min 380 -Max 580
-        \\\\$adClickY = Get-Random -Min 240 -Max 290
+        \\\\\\\\$adClickX = Get-Random -Min 380 -Max 580
+        \\\\\\\\$adClickY = Get-Random -Min 240 -Max 290
         P "      -> Случайный клик по спонсорскому объявлению (захват трекера)..." "Gray"
-        [WinInputV4]::Click(\\\\$adClickX, \\\\$adClickY)
+        [WinInputV4]::Click(\\\\\\\\$adClickX, \\\\\\\\$adClickY)
         
         # Ждём 3 секунды загрузки рекламного сайта и редиректов
         Start-Sleep -Seconds 3
@@ -9370,102 +9519,102 @@ foreach (\\\\$task in \\\\$personaRoutine) {
         Start-Sleep -Milliseconds 400
     }
 
-    \\\\$step++
+    \\\\\\\\$step++
 }
 
 # 4. Фиксация базы куков и сброс WAL
 P ""
 P "[4/5] Фиксация накопленной базы куков и трекеров..." "Yellow"
-Get-Process -Name chrome -ErrorAction SilentlyContinue | ForEach-Object { \\\\$_.CloseMainWindow() } | Out-Null
+Get-Process -Name chrome -ErrorAction SilentlyContinue | ForEach-Object { \\\\\\\\$_.CloseMainWindow() } | Out-Null
 Start-Sleep -Seconds 2
 Get-Process -Name chrome -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 
 # Анализ SQLite базы и формирование отчета
-function Extract-DomainsFromBinary(\\\\$filePath) {
-    if (-not (Test-Path \\\\$filePath)) { return @() }
+function Extract-DomainsFromBinary(\\\\\\\\$filePath) {
+    if (-not (Test-Path \\\\\\\\$filePath)) { return @() }
     try {
-        \\\\$bytes = [System.IO.File]::ReadAllBytes(\\\\$filePath)
-        \\\\$text = [System.Text.Encoding]::ASCII.GetString(\\\\$bytes)
-        \\\\$regex = [regex]'(?i)\\\\\\\\.?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\\\\\.(?:com|org|net|io|co|us|gov|edu|biz|info)'
-        \\\\$matches = \\\\$regex.Matches(\\\\$text)
-        \\\\$domains = @()
-        foreach (\\\\$m in \\\\$matches) {
-            \\\\$val = \\\\$m.Value.Trim().ToLower()
-            if (\\\\$val.Length -gt 4 -and -not (\\\\$val -match '\\\\\\\\.(png|jpg|gif|css|js|woff)\\\\$')) { \\\\$domains += \\\\$val }
+        \\\\\\\\$bytes = [System.IO.File]::ReadAllBytes(\\\\\\\\$filePath)
+        \\\\\\\\$text = [System.Text.Encoding]::ASCII.GetString(\\\\\\\\$bytes)
+        \\\\\\\\$regex = [regex]'(?i)\\\\\\\\\\\\\\\\.?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\\\\\\\\\\\\\.(?:com|org|net|io|co|us|gov|edu|biz|info)'
+        \\\\\\\\$matches = \\\\\\\\$regex.Matches(\\\\\\\\$text)
+        \\\\\\\\$domains = @()
+        foreach (\\\\\\\\$m in \\\\\\\\$matches) {
+            \\\\\\\\$val = \\\\\\\\$m.Value.Trim().ToLower()
+            if (\\\\\\\\$val.Length -gt 4 -and -not (\\\\\\\\$val -match '\\\\\\\\\\\\\\\\.(png|jpg|gif|css|js|woff)\\\\\\\\$')) { \\\\\\\\$domains += \\\\\\\\$val }
         }
-        return \\\\$domains | Select-Object -Unique
+        return \\\\\\\\$domains | Select-Object -Unique
     } catch { return @() }
 }
 
-\\\\$allDomains = @()
-\\\\$allDomains += Extract-DomainsFromBinary "\\\\$userChromeData\\\\\\\\Default\\\\\\\\Network\\\\\\\\Cookies"
-\\\\$allDomains += Extract-DomainsFromBinary "\\\\$userChromeData\\\\\\\\Default\\\\\\\\Network\\\\\\\\Cookies-wal"
-\\\\$allDomains += Extract-DomainsFromBinary "\\\\$userChromeData\\\\\\\\Default\\\\\\\\History"
-\\\\$uniqueDomains = \\\\$allDomains | Select-Object -Unique | Sort-Object
+\\\\\\\\$allDomains = @()
+\\\\\\\\$allDomains += Extract-DomainsFromBinary "\\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default\\\\\\\\\\\\\\\\Network\\\\\\\\\\\\\\\\Cookies"
+\\\\\\\\$allDomains += Extract-DomainsFromBinary "\\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default\\\\\\\\\\\\\\\\Network\\\\\\\\\\\\\\\\Cookies-wal"
+\\\\\\\\$allDomains += Extract-DomainsFromBinary "\\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default\\\\\\\\\\\\\\\\History"
+\\\\\\\\$uniqueDomains = \\\\\\\\$allDomains | Select-Object -Unique | Sort-Object
 
 # Категоризация
-\\\\$googleDoms  = @()
-\\\\$adTrackers  = @()
-\\\\$localDoms   = @()
-\\\\$lifestyleDoms = @()
+\\\\\\\\$googleDoms  = @()
+\\\\\\\\$adTrackers  = @()
+\\\\\\\\$localDoms   = @()
+\\\\\\\\$lifestyleDoms = @()
 
-foreach (\\\\$d in \\\\$uniqueDomains) {
-    if (\\\\$d -match 'google|gstatic|youtube|googleadservices|googletag|gvt1') {
-        \\\\$googleDoms += \\\\$d
-    } elseif (\\\\$d -match 'doubleclick|criteo|rubicon|adnxs|casalemedia|scorecard|taboola|outbrain|bing') {
-        \\\\$adTrackers += \\\\$d
-    } elseif (\\\\$d -match 'yelp|tripadvisor|map|weather|patch|city|fremont|library|tutor') {
-        \\\\$localDoms += \\\\$d
+foreach (\\\\\\\\$d in \\\\\\\\$uniqueDomains) {
+    if (\\\\\\\\$d -match 'google|gstatic|youtube|googleadservices|googletag|gvt1') {
+        \\\\\\\\$googleDoms += \\\\\\\\$d
+    } elseif (\\\\\\\\$d -match 'doubleclick|criteo|rubicon|adnxs|casalemedia|scorecard|taboola|outbrain|bing') {
+        \\\\\\\\$adTrackers += \\\\\\\\$d
+    } elseif (\\\\\\\\$d -match 'yelp|tripadvisor|map|weather|patch|city|fremont|library|tutor') {
+        \\\\\\\\$localDoms += \\\\\\\\$d
     } else {
-        \\\\$lifestyleDoms += \\\\$d
+        \\\\\\\\$lifestyleDoms += \\\\\\\\$d
     }
 }
 
 P "=================================================================" "Green"
 P "       ULTRA DIGITAL PERSONA & COOKIE AUDIT REPORT v4.0          " "Green"
 P "=================================================================" "Green"
-P "  Локация IP:        \\\\$(\\\\$geo.City), \\\\$(\\\\$geo.Region) (\\\\$(\\\\$geo.ISP))" "White"
-P "  Профиль браузера:  \\\\$userChromeData\\\\\\\\Default" "White"
-P "  Всего контекстов:  \\\\$(\\\\$uniqueDomains.Count) активных доменов" "White"
+P "  Локация IP:        \\\\\\\\$(\\\\\\\\$geo.City), \\\\\\\\$(\\\\\\\\$geo.Region) (\\\\\\\\$(\\\\\\\\$geo.ISP))" "White"
+P "  Профиль браузера:  \\\\\\\\$userChromeData\\\\\\\\\\\\\\\\Default" "White"
+P "  Всего контекстов:  \\\\\\\\$(\\\\\\\\$uniqueDomains.Count) активных доменов" "White"
 P ""
 P "[-] СТРУКТУРА ЦИФРОВОЙ ЛИЧНОСТИ (PERSONA TRUST GRAPH):" "Cyan"
 
-if (\\\\$googleDoms.Count -gt 0) {
-    P "  ├── 🌐 Google Core & AI Ecosystem (\\\\$(\\\\$googleDoms.Count) доменов)" "Yellow"
-    \\\\$googleDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$googleDoms.Count -gt 0) {
+    P "  ├── 🌐 Google Core & AI Ecosystem (\\\\\\\\$(\\\\\\\\$googleDoms.Count) доменов)" "Yellow"
+    \\\\\\\\$googleDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
 
-if (\\\\$adTrackers.Count -gt 0) {
-    P "  ├── 🎯 Рекламные трекеры и коммерческий след (\\\\$(\\\\$adTrackers.Count) трекеров)" "Yellow"
-    \\\\$adTrackers | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$adTrackers.Count -gt 0) {
+    P "  ├── 🎯 Рекламные трекеры и коммерческий след (\\\\\\\\$(\\\\\\\\$adTrackers.Count) трекеров)" "Yellow"
+    \\\\\\\\$adTrackers | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
 
-if (\\\\$localDoms.Count -gt 0) {
-    P "  ├── 📍 Локальный контекст (\\\\$(\\\\$geo.City), Silicon Valley) (\\\\$(\\\\$localDoms.Count) доменов)" "Yellow"
-    \\\\$localDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\$_" "Gray" }
+if (\\\\\\\\$localDoms.Count -gt 0) {
+    P "  ├── 📍 Локальный контекст (\\\\\\\\$(\\\\\\\\$geo.City), Silicon Valley) (\\\\\\\\$(\\\\\\\\$localDoms.Count) доменов)" "Yellow"
+    \\\\\\\\$localDoms | Select-Object -First 8 | ForEach-Object { P "  │   ├── \\\\\\\\$_" "Gray" }
 }
 
-if (\\\\$lifestyleDoms.Count -gt 0) {
-    P "  └── 🍳 Бытовой и потребительский след (рецепты/ремонт) (\\\\$(\\\\$lifestyleDoms.Count) доменов)" "Yellow"
-    \\\\$lifestyleDoms | Select-Object -First 8 | ForEach-Object { P "      ├── \\\\$_" "Gray" }
+if (\\\\\\\\$lifestyleDoms.Count -gt 0) {
+    P "  └── 🍳 Бытовой и потребительский след (рецепты/ремонт) (\\\\\\\\$(\\\\\\\\$lifestyleDoms.Count) доменов)" "Yellow"
+    \\\\\\\\$lifestyleDoms | Select-Object -First 8 | ForEach-Object { P "      ├── \\\\\\\\$_" "Gray" }
 }
 
 P ""
-\\\\$trustStatus = if (\\\\$uniqueDomains.Count -gt 25) { "MAXIMUM TRUST (Ultra Realistic Organic Persona)" } else { "HIGH TRUST" }
-P "  Статус траста:     [\\\\$trustStatus]" "Green"
+\\\\\\\\$trustStatus = if (\\\\\\\\$uniqueDomains.Count -gt 25) { "MAXIMUM TRUST (Ultra Realistic Organic Persona)" } else { "HIGH TRUST" }
+P "  Статус траста:     [\\\\\\\\$trustStatus]" "Green"
 P "=================================================================" "Green"
 
 # 5. Перезапуск Chrome с открытием настроек куков (chrome://settings/content/all)
 P "[5/5] Перезапуск Chrome и открытие настроек куков для визуальной проверки..." "Yellow"
-Start-Process -FilePath \\\\$chromePath -ArgumentList @(
-    "--user-data-dir=\\\\\\\`"\\\\$userChromeData\\\\\\\`"",
+Start-Process -FilePath \\\\\\\\$chromePath -ArgumentList @(
+    "--user-data-dir=\\\\\\\\\\\\\\\`"\\\\\\\\$userChromeData\\\\\\\\\\\\\\\`"",
     "--start-maximized",
     "chrome://settings/content/all"
 ) | Out-Null
 
-\\\\$finalOutput = \\\\$sb.ToString() + "\\\\\\\`r\\\\\\\`n[OK] Copy by buffer\\\\\\\`r\\\\\\\`n"
-try { Set-Clipboard -Value \\\\$finalOutput } catch { [System.Windows.Forms.Clipboard]::SetText(\\\\$finalOutput) }
+\\\\\\\\$finalOutput = \\\\\\\\$sb.ToString() + "\\\\\\\\\\\\\\\`r\\\\\\\\\\\\\\\`n[OK] Copy by buffer\\\\\\\\\\\\\\\`r\\\\\\\\\\\\\\\`n"
+try { Set-Clipboard -Value \\\\\\\\$finalOutput } catch { [System.Windows.Forms.Clipboard]::SetText(\\\\\\\\$finalOutput) }
 Write-Host ""
 Write-Host "[OK] Copy by buffer" -ForegroundColor Green
 `,

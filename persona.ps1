@@ -1090,68 +1090,122 @@ P ""
 
 # Функция генерации уникальной персоны и поисковых путей под целевой пресет
 
-function Get-PageDomElements($port = 9222) {
-
+function Navigate-BrowserBack($winX, $winY) {
+    P "      [⤾] Человеческий возврат к поиску через кнопку 'Назад'..." "Gray"
+    $dpiScale = 1.0
     try {
+        $graphics = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
+        $dpiScale = $graphics.DpiX / 96.0
+    } catch {}
 
+    $actualX = [Math]::Max(0, $winX)
+    $actualY = [Math]::Max(0, $winY)
+
+    # Точные координаты кнопки 'Назад' с учетом DPI масштабирования (2560x1440 125%/150%)
+    $backBtnX = $actualX + [int](24 * $dpiScale) + (Get-Random -Min -2 -Max 2)
+    $backBtnY = $actualY + [int](52 * $dpiScale) + (Get-Random -Min -2 -Max 2)
+
+    [WinInputV8]::MoveSmooth($backBtnX, $backBtnY, (Get-Random -Min 260 -Max 380))
+    Start-Sleep -Milliseconds (Get-Random -Min 100 -Max 180)
+    [WinInputV8]::Click($backBtnX, $backBtnY)
+    Start-Sleep -Milliseconds 450
+
+    # Бронебойная страховка возврата: стандартный хоткей браузера Alt+Left
+    [System.Windows.Forms.SendKeys]::SendWait("%{LEFT}")
+    Start-Sleep -Seconds 3
+    [WinInputV8]::ReleaseAllModifiers()
+}
+
+function Get-PageDomElements($port = 9222) {
+    try {
         $tabs = Invoke-RestMethod -Uri "http://127.0.0.1:$port/json" -TimeoutSec 2 -ErrorAction Stop
-
         $activeTab = $tabs | Where-Object { $_.type -eq "page" -and $_.url -notmatch '^(chrome|edge|opera):' } | Select-Object -First 1
-
         if (-not $activeTab -or -not $activeTab.webSocketDebuggerUrl) { return $null }
 
         $ws = New-Object System.Net.WebSockets.ClientWebSocket
-
         $ct = [System.Threading.CancellationToken]::None
-
         $uri = New-Object System.Uri($activeTab.webSocketDebuggerUrl)
-
         $ws.ConnectAsync($uri, $ct).Wait(2000) | Out-Null
-
         if ($ws.State -ne [System.Net.WebSockets.WebSocketState]::Open) { return $null }
 
-        $evalExpr = "(() => { const items = Array.from(document.querySelectorAll('h3, a h3, [role=heading], .LC20lb, a[href^=http]')).map(el => { const r = el.getBoundingClientRect(); return { text: el.innerText.trim(), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; }).filter(i => i.w > 35 && i.h > 10 && i.y > 150 && i.y < 900 && i.text.length > 5); return JSON.stringify(items); })()"
+        $evalExpr = @"
+(() => {
+    // 1. Поиск блока Google AI Overview (SGE)
+    const aiSelectors = [
+        '[data-attrid="wa:/description"]',
+        'div[jsname="N5A75d"]',
+        'div.m77AKe',
+        'div.q0qwxb',
+        '[aria-label*="Overview"]',
+        '[aria-label*="Обзор"]'
+    ];
+    let aiBlock = null;
+    for (const sel of aiSelectors) {
+        const el = document.querySelector(sel);
+        if (el) { aiBlock = el; break; }
+    }
+
+    // 2. Поиск поля ввода уточняющего вопроса к нейросети Google
+    const aiInputSelectors = [
+        'textarea[placeholder*="Ask a follow up"]',
+        'textarea[placeholder*="Задайте уточняющий вопрос"]',
+        'input[placeholder*="Ask a follow up"]',
+        'input[placeholder*="Задайте уточняющий вопрос"]',
+        '[aria-label*="Ask a follow up"]',
+        '[aria-label*="Задайте уточняющий вопрос"]',
+        'div[role="combobox"][aria-label*="Ask"]',
+        'div[role="combobox"]'
+    ];
+    let aiInputBox = null;
+    for (const sel of aiInputSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 50 && r.height > 15) {
+                aiInputBox = { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+                break;
+            }
+        }
+    }
+
+    // 3. Органические заголовки и ссылки
+    const headings = Array.from(document.querySelectorAll('h3, a h3, [role=heading], .LC20lb, a[href^=http]')).map(el => {
+        const r = el.getBoundingClientRect();
+        return { text: el.innerText.trim(), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+    }).filter(i => i.w > 35 && i.h > 10 && i.y > 150 && i.y < 1200 && i.text.length > 5);
+
+    return JSON.stringify({
+        hasAiOverview: !!aiBlock,
+        aiInput: aiInputBox,
+        items: headings
+    });
+})()
+"@
 
         $payload = @{
-
             id = 1
-
             method = "Runtime.evaluate"
-
             params = @{ expression = $evalExpr; returnByValue = $true }
-
         } | ConvertTo-Json -Compress
 
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
-
         $segment = New-Object System.ArraySegment[byte] -ArgumentList @($bytes, 0, $bytes.Length)
-
         $ws.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $ct).Wait(1500) | Out-Null
 
         $recvBuffer = New-Object byte[] 65536
-
         $recvSegment = New-Object System.ArraySegment[byte] -ArgumentList @($recvBuffer, 0, $recvBuffer.Length)
-
         $result = $ws.ReceiveAsync($recvSegment, $ct)
-
         $result.Wait(2000) | Out-Null
 
         $rawJson = [System.Text.Encoding]::UTF8.GetString($recvBuffer, 0, $result.Result.Count)
-
         $ws.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, "Done", $ct) | Out-Null
 
         $respObj = $rawJson | ConvertFrom-Json
-
         if ($respObj.result -and $respObj.result.result -and $respObj.result.result.value) {
-
             return ($respObj.result.result.value | ConvertFrom-Json)
-
         }
-
     } catch {}
-
     return $null
-
 }
 
 function Get-PersonaJourney($pIdx, $dispName, $city, $targetPreset) {
@@ -1628,9 +1682,29 @@ foreach ($chosen in $chosenProfiles) {
 
             # 1. Поиск элементов через DOM-дерево страницы (CDP / Layout)
 
-            $domElements = Get-PageDomElements 9222
+            $domData = Get-PageDomElements 9222
+                $domElements = if ($domData -and $domData.items) { $domData.items } elseif ($domData -and $domData.Count) { $domData } else { @() }
+                $targetElement = if ($domElements -and $domElements.Count -gt 0) { $domElements[0] } else { $null }
 
-            $targetElement = if ($domElements -and $domElements.Count -gt 0) { $domElements[0] } else { $null }
+                # Взаимодействие с Google AI Overview при его обнаружении
+                if ($domData -and $domData.hasAiOverview) {
+                    P "      [🤖 Google AI Overview] В выдаче активен блок нейросети Google!" "Yellow"
+                    if ($domData.aiInput -and (Get-Random -Min 0 -Max 100) -lt 65) {
+                        $aiIn = $domData.aiInput
+                        $aiClickX = $winX + $aiIn.x + [int]($aiIn.w * 0.3)
+                        $aiClickY = $winY + 128 + $aiIn.y + [int]($aiIn.h * 0.5)
+                        P "      [💬 AI Prompt] Наведение на строку уточняющего вопроса к нейросети Google..." "Magenta"
+                        [WinInputV8]::HumanAimAndClick($aiClickX, $aiClickY, $false)
+                        Start-Sleep -Milliseconds 450
+                        $aiQueries = @("tell me more", "can you give examples?", "what are key pros and cons?", "summarize briefly", "how does this work?")
+                        $aiQ = $aiQueries[(Get-Random -Min 0 -Max $aiQueries.Count)]
+                        P "      [⌨️ AI Chat] Вопрос к Google AI: '$aiQ'" "Cyan"
+                        Type-ExperiencedHuman $aiQ $null $null
+                        Start-Sleep -Seconds 4
+                        [WinInputV8]::ScrollSmooth(-200, 5)
+                        Start-Sleep -Seconds 2
+                    }
+                }
 
             $linkX = 0
 
@@ -1744,13 +1818,7 @@ foreach ($chosen in $chosenProfiles) {
 
                 P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
 
-                $backX = $winX + 18; $backY = $winY + 82
-
-                [WinInputV8]::Click($backX, $backY)
-
-                Start-Sleep -Seconds 3
-
-                [WinInputV8]::ReleaseAllModifiers()
+                Navigate-BrowserBack $winX $winY
 
             } else {
 
@@ -1774,13 +1842,7 @@ foreach ($chosen in $chosenProfiles) {
 
                 P "      <- Плавный возврат к поиску через нативную кнопку 'Назад'..." "Gray"
 
-                $backX = $winX + 18; $backY = $winY + 82
-
-                [WinInputV8]::Click($backX, $backY)
-
-                Start-Sleep -Seconds 3
-
-                [WinInputV8]::ReleaseAllModifiers()
+                Navigate-BrowserBack $winX $winY
 
             }
 
@@ -2099,3 +2161,5 @@ try { Set-Clipboard -Value $finalOutput } catch { [System.Windows.Forms.Clipboar
 Write-Host ""
 
 Write-Host "[OK] Copy by buffer" -ForegroundColor Green
+
+
