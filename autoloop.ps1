@@ -181,7 +181,154 @@ function Extract-DomainsAndTags($bytes) {
     }
 }
 
-function Get-BrowserProfilesMetadata($userDataPath) {
+
+function Get-ProfileFastSummary($profPath) {
+    if (-not (Test-Path $profPath)) {
+        return [PSCustomObject]@{
+            CookieBytes   = 0
+            ExactCookies  = 0
+            CookieDisplay = "0 кук"
+            TotalDoms     = 0
+            GoogleDoms    = 0
+            AdTrackers    = 0
+            LocalDoms     = 0
+            AmazonDoms    = 0
+            Score         = 0
+            Badge         = "🔴  0 PTS"
+            SummaryLine   = "[🔴  0 PTS | 🍪 0 кук      | 🌐  0 серв (Пустой)]"
+        }
+    }
+
+    $cFiles = @(
+        (Join-Path $profPath "Network\Cookies"),
+        (Join-Path $profPath "Cookies"),
+        (Join-Path $profPath "Network\Cookies-wal"),
+        (Join-Path $profPath "Cookies-wal")
+    )
+    $hFiles = @(
+        (Join-Path $profPath "History"),
+        (Join-Path $profPath "History-wal"),
+        (Join-Path $profPath "Preferences")
+    )
+
+    $cookieBytes = 0
+    $exactCookies = 0
+    $isExact = $false
+    $profDomains = @()
+    $profTags = @()
+
+    foreach ($cf in $cFiles) {
+        if (Test-Path $cf) {
+            $sz = (Get-Item $cf).Length
+            $cookieBytes += $sz
+
+            if (-not $isExact -and $sz -gt 100) {
+                try {
+                    $fs = New-Object System.IO.FileStream($cf, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    $hdr = New-Object byte[] 100
+                    $fs.Read($hdr, 0, 100) | Out-Null
+                    $magic = [System.Text.Encoding]::ASCII.GetString($hdr, 0, 15)
+                    if ($magic -eq "SQLite format 3") {
+                        $pSize = ([int]$hdr[16] -shl 8) -bor [int]$hdr[17]
+                        if ($pSize -eq 1) { $pSize = 65536 }
+                        $tPages = [int]($fs.Length / $pSize)
+                        $cells = 0
+                        for ($pi = 0; $pi -lt $tPages; $pi++) {
+                            $fs.Seek($pi * $pSize, [System.IO.SeekOrigin]::Begin) | Out-Null
+                            $pData = New-Object byte[] 108
+                            $fs.Read($pData, 0, 108) | Out-Null
+                            $off = if ($pi -eq 0) { 100 } else { 0 }
+                            if ($pData.Length -ge ($off + 5) -and $pData[$off] -eq 0x0D) {
+                                $cCnt = ([int]$pData[$off + 3] -shl 8) -bor [int]$pData[$off + 4]
+                                $cells += $cCnt
+                            }
+                        }
+                        $exactCookies = [Math]::Max(0, $cells - 7)
+                        $isExact = $true
+                    }
+                    $fs.Close()
+                } catch {}
+            }
+
+            $b = Read-LockedBinarySafe $cf
+            if ($b) {
+                $ext = Extract-DomainsAndTags $b
+                $profDomains += $ext.Domains
+                $profTags    += $ext.Tags
+            }
+        }
+    }
+
+    foreach ($hf in $hFiles) {
+        if (Test-Path $hf) {
+            $b = Read-LockedBinarySafe $hf
+            if ($b) {
+                $ext = Extract-DomainsAndTags $b
+                $profDomains += $ext.Domains
+            }
+        }
+    }
+
+    $uniqueDoms = @($profDomains | Select-Object -Unique)
+    $googleDoms = @($uniqueDoms | Where-Object { $_ -match 'google|gstatic|youtube|googleadservices|googletag|gvt1' })
+    $adTrackers = @($uniqueDoms | Where-Object { $_ -match 'doubleclick|criteo|rubicon|adnxs|casalemedia|scorecard|taboola|outbrain|bing' })
+    $localDoms  = @($uniqueDoms | Where-Object { $_ -match 'yelp|tripadvisor|map|weather|patch|city|fremont|library|tutor' })
+    $amazonDoms = @($uniqueDoms | Where-Object { $_ -match 'amazon|aws|media-amazon|ssl-images-amazon' })
+
+    $cookieStr = "0 кук"
+    if ($isExact -and $exactCookies -gt 0) {
+        $cookieStr = "$('{0:N0}' -f $exactCookies) кук"
+    } elseif ($cookieBytes -gt 1024) {
+        $est = [Math]::Round($cookieBytes / 480)
+        $cookieStr = "~$('{0:N0}' -f $est) кук"
+    }
+
+    $score = 0
+    if ($uniqueDoms.Count -gt 35) { $score += 30 }
+    elseif ($uniqueDoms.Count -gt 15) { $score += 20 }
+    elseif ($uniqueDoms.Count -gt 5) { $score += 10 }
+    elseif ($uniqueDoms.Count -gt 0) { $score += 5 }
+
+    if ($googleDoms.Count -ge 5) { $score += 25 }
+    elseif ($googleDoms.Count -ge 1) { $score += 12 }
+
+    if ($adTrackers.Count -ge 4) { $score += 25 }
+    elseif ($adTrackers.Count -ge 1) { $score += 15 }
+
+    if ($localDoms.Count -ge 2) { $score += 20 }
+    elseif ($localDoms.Count -ge 1) { $score += 10 }
+
+    $score = [Math]::Min(100, $score)
+
+    $badge = if ($score -ge 70) { "🟢 $('{0,2}' -f $score) PTS" } elseif ($score -ge 40) { "🟡 $('{0,2}' -f $score) PTS" } else { "🔴 $('{0,2}' -f $score) PTS" }
+
+    $detailStr = if ($uniqueDoms.Count -gt 0) {
+        "🌐 $('{0,2}' -f $uniqueDoms.Count) серв (G:$($googleDoms.Count), ТР:$($adTrackers.Count), ЛОК:$($localDoms.Count))"
+    } else {
+        "🌐  0 серв (Чистый профиль)"
+    }
+
+    $summaryLine = "[$badge | 🍪 $('{0,-10}' -f $cookieStr) | $detailStr]"
+
+    return [PSCustomObject]@{
+        CookieBytes   = $cookieBytes
+        ExactCookies  = $exactCookies
+        CookieDisplay = $cookieStr
+        TotalDoms     = $uniqueDoms.Count
+        GoogleDoms    = $googleDoms.Count
+        AdTrackers    = $adTrackers.Count
+        LocalDoms     = $localDoms.Count
+        AmazonDoms    = $amazonDoms.Count
+        Score         = $score
+        Badge         = $badge
+        SummaryLine   = $summaryLine
+    }
+}
+
+function Get-BrowserProfilesMetadata($userDataPath, $isDirect = $false) {
+    if ($isDirect) {
+        return @{ "" = [PSCustomObject]@{ Folder = ""; DisplayName = "Default Profile"; Email = "" } }
+    }
     $meta = @{}
     $localState = Join-Path $userDataPath "Local State"
     if (Test-Path $localState) {
@@ -241,7 +388,43 @@ $browserCatalog = @(
             "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
             "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
         );
-        ProcessName = "chrome"
+        ProcessName = "chrome";
+        IsDirect = $false
+    },
+    @{
+        Key      = "edge";
+        Name     = "Microsoft Edge";
+        UserData = "C:\Users\$activeUser\AppData\Local\Microsoft\Edge\User Data";
+        ExePaths = @(
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+            "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe"
+        );
+        ProcessName = "msedge";
+        IsDirect = $false
+    },
+    @{
+        Key      = "opera";
+        Name     = "Opera Stable";
+        UserData = "C:\Users\$activeUser\AppData\Roaming\Opera Software\Opera Stable";
+        ExePaths = @(
+            "$env:LOCALAPPDATA\Programs\Opera\opera.exe",
+            "$env:ProgramFiles\Opera\opera.exe",
+            "${env:ProgramFiles(x86)}\Opera\opera.exe"
+        );
+        ProcessName = "opera";
+        IsDirect = $true
+    },
+    @{
+        Key      = "brave";
+        Name     = "Brave Browser";
+        UserData = "C:\Users\$activeUser\AppData\Local\BraveSoftware\Brave-Browser\User Data";
+        ExePaths = @(
+            "$env:ProgramFiles\BraveSoftware\Brave-Browser\Application\brave.exe",
+            "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\Application\brave.exe"
+        );
+        ProcessName = "brave";
+        IsDirect = $false
     }
 )
 
@@ -253,9 +436,12 @@ foreach ($b in $browserCatalog) {
     }
     if (-not $exeFound -or -not (Test-Path $b.UserData)) { continue }
 
-    $metaDict = Get-BrowserProfilesMetadata $b.UserData
+    $metaDict = Get-BrowserProfilesMetadata $b.UserData $b.IsDirect
     foreach ($k in $metaDict.Keys) {
         $pInfo = $metaDict[$k]
+        $profPath = if ($pInfo.Folder) { Join-Path $b.UserData $pInfo.Folder } else { $b.UserData }
+        $metrics = Get-ProfileFastSummary $profPath
+
         $availableProfiles += [PSCustomObject]@{
             Index       = $availableProfiles.Count + 1
             BrowserKey  = $b.Key
@@ -266,6 +452,7 @@ foreach ($b in $browserCatalog) {
             Folder      = $pInfo.Folder
             DisplayName = $pInfo.DisplayName
             Email       = $pInfo.Email
+            Metrics     = $metrics
         }
     }
 }
@@ -275,7 +462,34 @@ if ($availableProfiles.Count -eq 0) {
     return
 }
 
-$chosen = $availableProfiles | Where-Object { $_.Index -eq 1 } | Select-Object -First 1
+$chosen = $null
+if ($Profile) {
+    if ($Profile -match '^\d+$') {
+        $chosen = $availableProfiles | Where-Object { $_.Index -eq [int]$Profile } | Select-Object -First 1
+    } else {
+        $chosen = $availableProfiles | Where-Object { $_.Folder -eq $Profile -or $_.DisplayName -eq $Profile } | Select-Object -First 1
+    }
+}
+
+if (-not $chosen) {
+    P "=================================================================" "Yellow"
+    P "             ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ АВТО-ПРОГРЕВА (AUTOLOOP):      " "Yellow"
+    P "=================================================================" "Yellow"
+    foreach ($ap in $availableProfiles) {
+        $mailInfo = if ($ap.Email) { " ($($ap.Email))" } else { "" }
+        $folderInfo = if ($ap.Folder) { "[Папка: $($ap.Folder)]" } else { "[Профиль: $($ap.DisplayName)]" }
+        P " [$($ap.Index)] $($ap.Metrics.SummaryLine) ➔ $($ap.BrowserName) :: `"$($ap.DisplayName)`"$mailInfo $folderInfo" "White"
+    }
+    P "-----------------------------------------------------------------" "Gray"
+    Write-Host " [?] Введите номер профиля [1-$($availableProfiles.Count)] (Enter = 1): " -ForegroundColor Cyan -NoNewline
+    $userInput = Read-Host
+    if ($userInput -match '^\d+$') {
+        $chosen = $availableProfiles | Where-Object { $_.Index -eq [int]$userInput } | Select-Object -First 1
+    }
+    if (-not $chosen) {
+        $chosen = $availableProfiles | Where-Object { $_.Index -eq 1 } | Select-Object -First 1
+    }
+}
 
 P "  -> Профиль:          $($chosen.BrowserName) :: `"$($chosen.DisplayName)`"" "Green"
 P "  -> Целевой траст:    $TargetScore / 100 PTS" "Cyan"

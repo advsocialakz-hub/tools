@@ -330,8 +330,63 @@ foreach ($b in $browserConfigs) {
             $verdictColor = "Red"
         }
 
+        
+        # Точный подсчет куков через ячейки SQLite B-tree
+        $exactCookies = 0
+        $isExactCookies = $false
+        foreach ($cf in $cookieFiles) {
+            if (-not $isExactCookies -and (Test-Path $cf)) {
+                $sz = (Get-Item $cf).Length
+                if ($sz -gt 100) {
+                    try {
+                        $fs = New-Object System.IO.FileStream($cf, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        $hdr = New-Object byte[] 100
+                        $fs.Read($hdr, 0, 100) | Out-Null
+                        $magic = [System.Text.Encoding]::ASCII.GetString($hdr, 0, 15)
+                        if ($magic -eq "SQLite format 3") {
+                            $pSize = ([int]$hdr[16] -shl 8) -bor [int]$hdr[17]
+                            if ($pSize -eq 1) { $pSize = 65536 }
+                            $tPages = [int]($fs.Length / $pSize)
+                            $cells = 0
+                            for ($pi = 0; $pi -lt $tPages; $pi++) {
+                                $fs.Seek($pi * $pSize, [System.IO.SeekOrigin]::Begin) | Out-Null
+                                $pData = New-Object byte[] 108
+                                $fs.Read($pData, 0, 108) | Out-Null
+                                $off = if ($pi -eq 0) { 100 } else { 0 }
+                                if ($pData.Length -ge ($off + 5) -and $pData[$off] -eq 0x0D) {
+                                    $cCnt = ([int]$pData[$off + 3] -shl 8) -bor [int]$pData[$off + 4]
+                                    $cells += $cCnt
+                                }
+                            }
+                            $exactCookies = [Math]::Max(0, $cells - 7)
+                            $isExactCookies = $true
+                        }
+                        $fs.Close()
+                    } catch {}
+                }
+            }
+        }
+
+        $cookieCountStr = "0 кук"
+        if ($isExactCookies -and $exactCookies -gt 0) {
+            $cookieCountStr = "$('{0:N0}' -f $exactCookies) кук"
+        } elseif ($totalCookieBytes -gt 1024) {
+            $est = [Math]::Round($totalCookieBytes / 480)
+            $cookieCountStr = "~$('{0:N0}' -f $est) кук"
+        }
+
+        $badge = if ($score -ge 70) { "🟢 $('{0,2}' -f $score) PTS" } elseif ($score -ge 40) { "🟡 $('{0,2}' -f $score) PTS" } else { "🔴 $('{0,2}' -f $score) PTS" }
+        $detailStr = if ($uniqueProfDomains.Count -gt 0) {
+            "🌐 $('{0,2}' -f $uniqueProfDomains.Count) серв (G:$($googleDoms.Count), ТР:$($adTrackers.Count), ЛОК:$($localDoms.Count))"
+        } else {
+            "🌐  0 серв (Пустой)"
+        }
+        $summaryLine = "[$badge | 🍪 $('{0,-10}' -f $cookieCountStr) | $detailStr]"
+
         $profileCards += [PSCustomObject]@{
             Index            = $cardIdx
+            SummaryLine      = $summaryLine
+            CookieCountStr   = $cookieCountStr
             Title            = $profTitle
             DisplayName      = $meta.DisplayName
             Email            = $meta.Email
@@ -389,8 +444,9 @@ if ($chosenCards.Count -eq 0) {
     P "             ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ ДЕТАЛЬНОГО АУДИТА:             " "Yellow"
     P "=================================================================" "Yellow"
     foreach ($c in $profileCards) {
-        $mailInfo = if ($c.Email) { " (Аккаунт: $($c.Email))" } else { "" }
-        P " [$($c.Index)] $($c.Browser) ➔ `"$($c.DisplayName)`"$mailInfo [Папка: $($c.Folder)]" "White"
+        $mailInfo = if ($c.Email) { " ($($c.Email))" } else { "" }
+        $folderInfo = if ($c.Folder) { "[Папка: $($c.Folder)]" } else { "[Профиль: $($c.DisplayName)]" }
+        P " [$($c.Index)] $($c.SummaryLine) ➔ $($c.Browser) :: `"$($c.DisplayName)`"$mailInfo $folderInfo" "White"
     }
     P "-----------------------------------------------------------------" "Gray"
     Write-Host " [?] Введите номер профиля [1-$($profileCards.Count)] или нажмите Enter для полного отчёта по ВСЕМ: " -ForegroundColor Cyan -NoNewline
