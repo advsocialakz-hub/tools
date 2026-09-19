@@ -9774,6 +9774,18 @@ export default {
     } else if (v === "diag" || v === "diagnose" || v === "sys" || v === "forensic" || v === "audit-net" || v === "docker") {
       script = SCRIPTS["diag"];
       versionBadge = "v2.0 (Deep Hardware, Docker & Cloud Diagnostic)";
+    } else if (v === "timeline" || v === "leak" || v === "time" || v === "boot") {
+      try {
+        const ghTimeline = await fetch("https://raw.githubusercontent.com/advsocialakz-hub/tools/main/timeline.ps1");
+        if (ghTimeline.ok) {
+          script = await ghTimeline.text();
+          versionBadge = "v1.0 (VM Forensic Timeline & Leak Detector)";
+        }
+      } catch(e) {}
+      if (!script) {
+        script = SCRIPTS["diag"];
+        versionBadge = "Fallback Diagnostic";
+      }
     } else if (v === "audit" || v === "audit-v5" || v === "audit5" || v === "a5" || v === "test") {
       script = SCRIPTS["audit5"];
       versionBadge = "v6.5 (Universal Global Auditor)";
